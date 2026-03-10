@@ -64,7 +64,7 @@ Accepts IPv4 or IPv6 as tuple, binary, or string:
 ban(IP) ->
     ok = erlkoenig_nft_firewall:ban(IP),
     %% Also kill existing connections from this IP
-    case erlkoenig_nft_ip:normalize(IP) of
+    _ = case erlkoenig_nft_ip:normalize(IP) of
         {ok, Bin} ->
             try erlkoenig_nft_ct:kill_by_src(Bin)
             catch exit:{noproc, _} -> ok

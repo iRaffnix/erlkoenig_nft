@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev-*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  erlang:
+    name: Erlang Tests + Dialyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.24'
+
+      - name: Cache rebar3
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            ~/.cache/rebar3
+          key: rebar3-otp27-${{ hashFiles('rebar.config') }}
+
+      - name: Compile
+        run: rebar3 compile
+
+      - name: Common Test (rootless)
+        run: rebar3 ct
+
+      - name: Dialyzer
+        run: rebar3 dialyzer
+
+  dsl:
+    name: Elixir DSL Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18'
+
+      - name: Compile DSL
+        run: cd dsl && mix compile
+
+      - name: Test DSL
+        run: cd dsl && mix test

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev-*]
+    branches: [main, dev-*, kernel-test]
   pull_request:
     branches: [main]
 
@@ -35,6 +35,24 @@ jobs:
 
       - name: Dialyzer
         run: rebar3 dialyzer
+
+  kernel:
+    name: Kernel Tests (root)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.24'
+
+      - name: Compile
+        run: rebar3 compile
+
+      - name: Kernel Tests (sudo)
+        run: sudo $(which rebar3) ct
 
   dsl:
     name: Elixir DSL Tests

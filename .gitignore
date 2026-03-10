@@ -1,0 +1,8 @@
+_build/
+deps/
+rebar.lock
+dsl/_build/
+dsl/deps/
+dsl/mix.lock
+*.beam
+erl_crash.dump

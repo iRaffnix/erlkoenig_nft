@@ -209,9 +209,9 @@ init(Opts) ->
 
     %% Create ETS tables
     %% Full tracking: {Key, State, Timestamp, Timeout}
-    ets:new(?CT_TAB, [named_table, set, public, {read_concurrency, true}]),
+    _ = ets:new(?CT_TAB, [named_table, set, public, {read_concurrency, true}]),
     %% Aggregation: {SrcIP, Count, FirstSeen, LastSeen}
-    ets:new(?CT_AGG, [named_table, set, public, {read_concurrency, true}]),
+    _ = ets:new(?CT_AGG, [named_table, set, public, {read_concurrency, true}]),
 
     case open_ct_socket() of
         {ok, Sock} ->

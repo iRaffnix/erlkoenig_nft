@@ -52,7 +52,7 @@ jobs:
         run: rebar3 compile
 
       - name: Kernel Tests (sudo)
-        run: sudo $(which rebar3) ct
+        run: sudo -E env "PATH=$PATH" rebar3 ct
 
   dsl:
     name: Elixir DSL Tests

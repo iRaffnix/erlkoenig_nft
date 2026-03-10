@@ -17,7 +17,7 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: '27'
-          elixir-version: '1.18'
+          rebar3-version: '3.24'
 
       - name: Cache rebar3
         uses: actions/cache@v4

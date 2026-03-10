@@ -48,6 +48,9 @@ jobs:
           otp-version: '27'
           rebar3-version: '3.24'
 
+      - name: Install nftables CLI
+        run: sudo apt-get update && sudo apt-get install -y nftables
+
       - name: Compile
         run: rebar3 compile
 

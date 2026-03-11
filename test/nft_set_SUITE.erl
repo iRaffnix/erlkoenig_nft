@@ -112,7 +112,7 @@ lookup_not_match(_) ->
 kernel_create_set(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_set(Pid),
-    Items = nft_json("list sets inet " ++ binary_to_list(?TABLE)),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     ?assertMatch([_|_], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items]),
     nfnl_server:stop(Pid).
 
@@ -126,7 +126,7 @@ kernel_set_with_timeout(_Config) ->
             timeout => 300000, id => 1
         }, Seq) end
     ]),
-    Items = nft_json("list sets inet " ++ binary_to_list(?TABLE)),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Set] = [S || #{<<"set">> := S = #{<<"name">> := ?SET}} <- Items],
     ?assert(maps:is_key(<<"timeout">>, Set)),
     nfnl_server:stop(Pid).

@@ -111,7 +111,7 @@ kernel_delete_set(_Config) ->
         }, Seq) end
     ]),
     %% Verify set exists
-    Items1 = nft_json("list sets inet " ++ binary_to_list(?TABLE)),
+    Items1 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     ?assertMatch([_|_], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items1]),
     %% Delete set
     ok = nfnl_server:apply_msgs(Pid, [
@@ -120,7 +120,7 @@ kernel_delete_set(_Config) ->
     %% Verify table exists but set is gone
     Items2 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     ?assertMatch([_|_], Items2),
-    Items3 = nft_json("list sets inet " ++ binary_to_list(?TABLE)),
+    Items3 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     ?assertEqual([], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items3]),
     nfnl_server:stop(Pid).
 

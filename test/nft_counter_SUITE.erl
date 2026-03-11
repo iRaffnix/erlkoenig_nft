@@ -85,7 +85,7 @@ kernel_named_counter(_Config) ->
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
         fun(Seq) -> nft_object:add_counter(?NFPROTO_INET, ?TABLE, <<"test_cnt">>, Seq) end
     ]),
-    Items = nft_json("list counters inet " ++ binary_to_list(?TABLE)),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     ?assertMatch([_], [C || #{<<"counter">> := C = #{<<"name">> := <<"test_cnt">>}} <- Items]),
     nfnl_server:stop(Pid).
 
@@ -119,7 +119,7 @@ kernel_counter_values(_Config) ->
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
         fun(Seq) -> nft_object:add_counter(?NFPROTO_INET, ?TABLE, <<"val_cnt">>, Seq) end
     ]),
-    Items = nft_json("list counters inet " ++ binary_to_list(?TABLE)),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Counter] = [C || #{<<"counter">> := C = #{<<"name">> := <<"val_cnt">>}} <- Items],
     ?assertEqual(0, maps:get(<<"packets">>, Counter)),
     ?assertEqual(0, maps:get(<<"bytes">>, Counter)),

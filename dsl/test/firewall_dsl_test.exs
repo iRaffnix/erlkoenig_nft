@@ -43,6 +43,29 @@ defmodule ErlkoenigNft.FirewallDslTest do
     end
   end
 
+  defmodule NflogFirewall do
+    use ErlkoenigNft.Firewall
+
+    firewall "nflog" do
+      counters [:ssh, :banned, :dropped]
+      set "blocklist", :ipv4_addr
+      set "allowlist", :ipv4_addr, timeout: 300_000
+
+      chain "prerouting_ban", hook: :prerouting, priority: -300, policy: :accept do
+        drop_if_in_set "blocklist", counter: :banned
+      end
+
+      chain "input", hook: :input, policy: :drop do
+        accept :established
+        accept :loopback
+        accept_udp_if_in_set "allowlist", 51820
+        accept_tcp 22, counter: :ssh, limit: {25, burst: 5}
+        accept :icmp
+        log_and_drop_nflog "DROP: ", group: 0, counter: :dropped
+      end
+    end
+  end
+
   describe "DSL compilation" do
     test "WebFirewall compiles with all features" do
       term = WebFirewall.config()
@@ -90,6 +113,38 @@ defmodule ErlkoenigNft.FirewallDslTest do
                {:udp_accept, 53},
                :accept
              ]
+    end
+
+    test "NflogFirewall has accept_udp_if_in_set rule" do
+      term = NflogFirewall.config()
+      input = Enum.find(term.chains, &(&1.name == "input"))
+      assert {:set_lookup_udp_accept, "allowlist", 51820} in input.rules
+    end
+
+    test "NflogFirewall has log_drop_nflog rule" do
+      term = NflogFirewall.config()
+      input = Enum.find(term.chains, &(&1.name == "input"))
+      assert {:log_drop_nflog, "DROP: ", 0, "dropped"} in input.rules
+    end
+
+    test "NflogFirewall rule order is preserved" do
+      term = NflogFirewall.config()
+      input = Enum.find(term.chains, &(&1.name == "input"))
+      rules = input.rules
+      udp_idx = Enum.find_index(rules, &match?({:set_lookup_udp_accept, _, _}, &1))
+      tcp_idx = Enum.find_index(rules, &match?({:tcp_accept_limited, 22, _, _}, &1))
+      nflog_idx = Enum.find_index(rules, &match?({:log_drop_nflog, _, _, _}, &1))
+      assert udp_idx < tcp_idx
+      assert tcp_idx < nflog_idx
+    end
+
+    test "NflogFirewall has set with timeout" do
+      term = NflogFirewall.config()
+      allow_set = Enum.find(term.sets, fn
+        {"allowlist", _, _} -> true
+        _ -> false
+      end)
+      assert {"allowlist", :ipv4_addr, %{flags: [:timeout], timeout: 300_000}} = allow_set
     end
 
     test "write! produces file" do

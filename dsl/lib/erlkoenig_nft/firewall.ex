@@ -226,4 +226,26 @@ defmodule ErlkoenigNft.Firewall do
   defmacro log_and_reject(prefix) do
     quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.log_reject(unquote(prefix)))
   end
+
+  # --- NFLOG macros ---
+
+  defmacro accept_udp_if_in_set(set_name, port) do
+    quote do
+      @fw_builder Builder.push_rule(@fw_builder, Builder.set_lookup_udp_accept(unquote(set_name), unquote(port)))
+    end
+  end
+
+  defmacro log_and_drop_nflog(prefix, opts) do
+    quote do
+      group = Keyword.get(unquote(opts), :group, 0)
+      counter = Keyword.get(unquote(opts), :counter)
+
+      rule =
+        if counter,
+          do: Builder.log_drop_nflog(unquote(prefix), group, counter),
+          else: Builder.log_drop_nflog(unquote(prefix), group, "unknown")
+
+      @fw_builder Builder.push_rule(@fw_builder, rule)
+    end
+  end
 end

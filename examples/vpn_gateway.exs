@@ -2,7 +2,7 @@
 #
 # 5. VPN Gateway / NAT Router
 #
-# WireGuard VPN gateway with SPA authentication.
+# WireGuard VPN gateway with NAT.
 # Routes traffic between WireGuard clients and the internet.
 # Masquerade (SNAT) for outgoing NAT. Multi-chain setup.
 
@@ -10,11 +10,9 @@ defmodule Firewall.VPNGateway do
   use ErlkoenigNft.Firewall
 
   firewall "vpngw" do
-    counters [:ssh, :wg, :spa, :forwarded, :banned, :dropped]
+    counters [:ssh, :wg, :forwarded, :banned, :dropped]
     set "blocklist", :ipv4_addr
     set "blocklist6", :ipv6_addr
-    set "wg_allow", :ipv4_addr, timeout: 300_000        # 5 min auto-expire
-    set "wg_allow6", :ipv6_addr, timeout: 300_000
 
     # Drop banned before any processing
     chain "prerouting_ban", hook: :prerouting, priority: -300, policy: :accept do
@@ -26,7 +24,6 @@ defmodule Firewall.VPNGateway do
     chain "inbound", hook: :input, policy: :drop do
       accept :established
       accept :loopback
-      # SPA + WireGuard gating handled at term level
       accept_tcp 22, counter: :ssh, limit: {10, burst: 3}
       accept_udp 51820, counter: :wg
       accept :icmp

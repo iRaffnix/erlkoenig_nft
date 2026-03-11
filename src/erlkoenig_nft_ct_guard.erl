@@ -307,7 +307,7 @@ ban_ip(SrcIP, Reason, #{ban_duration := Duration,
             ets:insert(?GUARD_BANS, {SrcIP, Now, ExpiresAt, Reason}),
 
             %% Apply ban in firewall
-            try_ban(SrcIP),
+            _ = try_ban(SrcIP),
 
             %% Schedule auto-unban
             erlang:send_after(Duration * 1000, self(), {unban, SrcIP}),
@@ -337,31 +337,21 @@ is_banned(SrcIP) ->
     ets:member(?GUARD_BANS, SrcIP).
 
 try_ban(SrcIP) ->
-    try erlkoenig_nft:ban(SrcIP) of
-        ok -> ok;
-        {error, Reason} ->
-            logger:error("[ct_guard] ban failed for ~s: ~p",
-                         [erlkoenig_nft_ip:format(SrcIP), Reason]),
-            {error, Reason}
+    try
+        erlkoenig_nft:ban(SrcIP)
     catch
         C:R ->
             logger:error("[ct_guard] ban crashed for ~s: ~p:~p",
-                         [erlkoenig_nft_ip:format(SrcIP), C, R]),
-            {error, {C, R}}
+                         [erlkoenig_nft_ip:format(SrcIP), C, R])
     end.
 
 try_unban(SrcIP) ->
-    try erlkoenig_nft:unban(SrcIP) of
-        ok -> ok;
-        {error, Reason} ->
-            logger:error("[ct_guard] unban failed for ~s: ~p",
-                         [erlkoenig_nft_ip:format(SrcIP), Reason]),
-            {error, Reason}
+    try
+        erlkoenig_nft:unban(SrcIP)
     catch
         C:R ->
             logger:error("[ct_guard] unban crashed for ~s: ~p:~p",
-                         [erlkoenig_nft_ip:format(SrcIP), C, R]),
-            {error, {C, R}}
+                         [erlkoenig_nft_ip:format(SrcIP), C, R])
     end.
 
 %% ===================================================================

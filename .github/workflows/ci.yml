@@ -86,45 +86,30 @@ jobs:
       matrix:
         target:
           - name: x86_64-glibc
-            container: debian:12
-            install: |
-              apt-get update
-              apt-get install -y curl git make gcc g++ libc6-dev openssl libssl-dev tar xz-utils ca-certificates gnupg
-            install_erlang: |
-              curl -fsSL https://binaries2.erlang-solutions.com/GPG-KEY-pmanber.asc | gpg --dearmor -o /usr/share/keyrings/erlang-solutions.gpg
-              echo "deb [signed-by=/usr/share/keyrings/erlang-solutions.gpg] https://binaries2.erlang-solutions.com/debian bookworm-esl-erlang-27 contrib" > /etc/apt/sources.list.d/erlang.list
-              apt-get update
-              apt-get install -y esl-erlang
-            install_rebar3: |
-              curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3
-              chmod +x /usr/local/bin/rebar3
+            image: erlang:27-slim
+            deps: apt-get update && apt-get install -y git make gcc g++
           - name: x86_64-musl
-            container: alpine:3.20
-            install: |
-              apk add --no-cache bash curl git make gcc g++ musl-dev openssl-dev tar xz
-            install_erlang: |
-              apk add --no-cache erlang erlang-dev
-            install_rebar3: |
-              curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3
-              chmod +x /usr/local/bin/rebar3
+            image: erlang:27-alpine
+            deps: apk add --no-cache git make gcc g++ musl-dev
 
     container:
-      image: ${{ matrix.target.container }}
+      image: ${{ matrix.target.image }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install OS deps
-        run: ${{ matrix.target.install }}
-
-      - name: Install Erlang
-        run: ${{ matrix.target.install_erlang }}
+      - name: Install build deps
+        run: ${{ matrix.target.deps }}
 
       - name: Install rebar3
-        run: ${{ matrix.target.install_rebar3 }}
+        run: |
+          curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3
+          chmod +x /usr/local/bin/rebar3
 
       - name: Verify install
-        run: erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().' && rebar3 version
+        run: |
+          erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
+          rebar3 version
 
       - name: Build release
         run: rebar3 as prod tar

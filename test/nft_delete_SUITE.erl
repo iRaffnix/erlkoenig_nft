@@ -65,15 +65,15 @@ kernel_delete_table(_Config) ->
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end
     ]),
     %% Verify table exists
-    Output1 = os:cmd("nft list tables"),
-    ?assertNotEqual(nomatch, string:find(Output1, "erltest_del")),
+    Items1 = nft_json("list tables"),
+    ?assertMatch([_|_], [T || #{<<"table">> := T = #{<<"name">> := <<"erltest_del">>}} <- Items1]),
     %% Delete it
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_delete:table(?NFPROTO_INET, ?TABLE, Seq) end
     ]),
     %% Verify it's gone
-    Output2 = os:cmd("nft list tables"),
-    ?assertEqual(nomatch, string:find(Output2, "erltest_del")),
+    Items2 = nft_json("list tables"),
+    ?assertEqual([], [T || #{<<"table">> := T = #{<<"name">> := <<"erltest_del">>}} <- Items2]),
     nfnl_server:stop(Pid).
 
 kernel_delete_chain(_Config) ->
@@ -87,16 +87,15 @@ kernel_delete_chain(_Config) ->
         }, Seq) end
     ]),
     %% Verify chain exists
-    Output1 = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                      ++ " " ++ binary_to_list(?CHAIN)),
-    ?assertNotEqual([], Output1),
+    Items1 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    ?assertMatch([_|_], [C || #{<<"chain">> := C} <- Items1]),
     %% Delete chain
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_delete:chain(?NFPROTO_INET, ?TABLE, ?CHAIN, Seq) end
     ]),
     %% Verify table still exists but chain is gone
-    Output2 = os:cmd("nft list table inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual([], Output2),
+    Items2 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    ?assertMatch([_|_], Items2),
     Output3 = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
                       ++ " " ++ binary_to_list(?CHAIN) ++ " 2>&1"),
     ?assertNotEqual(nomatch, string:find(Output3, "Error")),
@@ -112,15 +111,27 @@ kernel_delete_set(_Config) ->
         }, Seq) end
     ]),
     %% Verify set exists
-    Output1 = os:cmd("nft list sets inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual(nomatch, string:find(Output1, "banned")),
+    Items1 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    ?assertMatch([_|_], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items1]),
     %% Delete set
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_delete:set(?NFPROTO_INET, ?TABLE, ?SET, Seq) end
     ]),
     %% Verify table exists but set is gone
-    Output2 = os:cmd("nft list table inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual([], Output2),
-    Output3 = os:cmd("nft list sets inet " ++ binary_to_list(?TABLE)),
-    ?assertEqual(nomatch, string:find(Output3, "banned")),
+    Items2 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    ?assertMatch([_|_], Items2),
+    Items3 = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    ?assertEqual([], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items3]),
     nfnl_server:stop(Pid).
+
+%% --- Helpers ---
+
+nft_json(Cmd) ->
+    case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
+        [] -> [];
+        Output ->
+            case catch json:decode(list_to_binary(Output)) of
+                #{<<"nftables">> := Items} -> Items;
+                _ -> ct:fail({nft_json_failed, Cmd, Output})
+            end
+    end.

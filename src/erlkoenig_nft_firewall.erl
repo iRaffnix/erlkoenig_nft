@@ -168,11 +168,16 @@ handle_call(reload, _From, #{table := OldTable} = State) ->
                         ok ->
                             NewTable = maps:get(table, NewConfig),
                             %% Delete old table if name changed
-                            _ = case NewTable =/= OldTable of
+                            case NewTable =/= OldTable of
                                 true ->
-                                    nfnl_server:apply_msgs(erlkoenig_nft_srv, [
+                                    case nfnl_server:apply_msgs(erlkoenig_nft_srv, [
                                         fun(S) -> nft_delete:table(?INET, OldTable, S) end
-                                    ]);
+                                    ]) of
+                                        ok -> ok;
+                                        {error, DelErr} ->
+                                            logger:warning("[erlkoenig_nft] Failed to delete old table ~s: ~p",
+                                                           [OldTable, DelErr])
+                                    end;
                                 false ->
                                     ok
                             end,
@@ -224,7 +229,8 @@ apply_set_op(Config, IPBin, LookupFun, RuleFun, LogFmt, LogArgs) ->
             Result = nfnl_server:apply_msgs(erlkoenig_nft_srv, [RuleFun(Table, SetName)]),
             case Result of
                 ok -> logger:notice("[erlkoenig_nft] " ++ LogFmt, LogArgs);
-                _  -> ok
+                {error, OpErr} ->
+                    logger:warning("[erlkoenig_nft] set op failed: ~p", [OpErr])
             end,
             Result;
         {error, _} = Err ->
@@ -240,10 +246,15 @@ apply_config(Config) ->
     Counters = maps:get(counters, Config, []),
     Chains   = maps:get(chains, Config, []),
 
-    %% Clean slate via Netlink (no os:cmd)
-    _ = nfnl_server:apply_msgs(erlkoenig_nft_srv, [
+    %% Clean slate via Netlink (no os:cmd) — may fail if table doesn't exist yet
+    case nfnl_server:apply_msgs(erlkoenig_nft_srv, [
         fun(S) -> nft_delete:table(?INET, Table, S) end
-    ]),
+    ]) of
+        ok -> ok;
+        {error, DelErr} ->
+            logger:debug("[erlkoenig_nft] clean-slate delete of ~s: ~p (may be first run)",
+                         [Table, DelErr])
+    end,
 
     %% Build all messages
     Msgs = lists:flatten([

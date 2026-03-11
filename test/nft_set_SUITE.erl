@@ -112,8 +112,8 @@ lookup_not_match(_) ->
 kernel_create_set(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_set(Pid),
-    Output = os:cmd("nft list sets inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual(nomatch, string:find(Output, "banned")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    ?assertMatch([_|_], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items]),
     nfnl_server:stop(Pid).
 
 kernel_set_with_timeout(_Config) ->
@@ -126,8 +126,9 @@ kernel_set_with_timeout(_Config) ->
             timeout => 300000, id => 1
         }, Seq) end
     ]),
-    Output = os:cmd("nft list sets inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual(nomatch, string:find(Output, "timeout")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    [Set] = [S || #{<<"set">> := S = #{<<"name">> := ?SET}} <- Items],
+    ?assert(maps:is_key(<<"timeout">>, Set)),
     nfnl_server:stop(Pid).
 
 kernel_add_elem(_Config) ->
@@ -136,7 +137,7 @@ kernel_add_elem(_Config) ->
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_set_elem:add(?NFPROTO_INET, ?TABLE, ?SET, <<10,0,0,5>>, Seq) end
     ]),
-    Output = os:cmd("nft list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
+    Output = os:cmd("nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
     ?assertNotEqual(nomatch, string:find(Output, "10.0.0.5")),
     nfnl_server:stop(Pid).
 
@@ -147,14 +148,14 @@ kernel_del_elem(_Config) ->
         fun(Seq) -> nft_set_elem:add(?NFPROTO_INET, ?TABLE, ?SET, <<10,0,0,5>>, Seq) end
     ]),
     %% Verify it's there
-    Output1 = os:cmd("nft list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
+    Output1 = os:cmd("nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
     ?assertNotEqual(nomatch, string:find(Output1, "10.0.0.5")),
     %% Delete it
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_set_elem:del(?NFPROTO_INET, ?TABLE, ?SET, <<10,0,0,5>>, Seq) end
     ]),
     %% Verify it's gone
-    Output2 = os:cmd("nft list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
+    Output2 = os:cmd("nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
     ?assertEqual(nomatch, string:find(Output2, "10.0.0.5")),
     nfnl_server:stop(Pid).
 
@@ -169,11 +170,24 @@ kernel_set_lookup_rule(_Config) ->
         }, Seq) end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, nft_rules:set_lookup_drop(?SET))
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?CHAIN)),
-    ?assertNotEqual(nomatch, string:find(Output, "banned")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    Rules = [R || #{<<"rule">> := R} <- Items],
+    ?assertMatch([_], Rules),
+    [#{<<"expr">> := Exprs}] = Rules,
+    ?assert(lists:any(fun(E) -> maps:is_key(<<"match">>, E) end, Exprs)),
     nfnl_server:stop(Pid).
 
 %% --- Helpers ---
+
+nft_json(Cmd) ->
+    case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
+        [] -> [];
+        Output ->
+            case catch json:decode(list_to_binary(Output)) of
+                #{<<"nftables">> := Items} -> Items;
+                _ -> ct:fail({nft_json_failed, Cmd, Output})
+            end
+    end.
 
 setup_table_and_set(Pid) ->
     ok = nfnl_server:apply_msgs(Pid, [

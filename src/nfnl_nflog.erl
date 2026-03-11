@@ -69,21 +69,21 @@ open(Group, CopyRange) ->
 
 %% --- Internal ---
 
--spec send_config_cmd(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
+-spec send_config_cmd(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok | {error, term()}.
 send_config_cmd(Sock, Cmd, Group, PF) ->
     NfGenMsg = <<PF:8, 0:8, Group:16/big>>,
     CmdAttr = nfnl_attr:encode(?NFULA_CFG_CMD, <<Cmd:8>>),
     Payload = <<NfGenMsg/binary, CmdAttr/binary>>,
     send_config(Sock, Payload).
 
--spec send_config_mode(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
+-spec send_config_mode(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok | {error, term()}.
 send_config_mode(Sock, Group, CopyMode, CopyRange) ->
     NfGenMsg = <<0:8, 0:8, Group:16/big>>,
     ModeAttr = nfnl_attr:encode(?NFULA_CFG_MODE, <<CopyRange:32/big, CopyMode:8, 0:8>>),
     Payload = <<NfGenMsg/binary, ModeAttr/binary>>,
     send_config(Sock, Payload).
 
--spec send_config(socket:socket(), binary()) -> ok.
+-spec send_config(socket:socket(), binary()) -> ok | {error, term()}.
 send_config(Sock, Payload) ->
     Type = (?NFNL_SUBSYS_ULOG bsl 8) bor ?NFULNL_MSG_CONFIG,
     Flags = ?NLM_F_REQUEST bor ?NLM_F_ACK,
@@ -93,7 +93,11 @@ send_config(Sock, Payload) ->
             Seq:32/little, 0:32/little, Payload/binary>>,
     case socket:send(Sock, Msg) of
         ok ->
-            _ = socket:recv(Sock, 0, ?RECV_TIMEOUT),
-            ok;
+            case socket:recv(Sock, 0, ?RECV_TIMEOUT) of
+                {ok, _} -> ok;
+                {error, Reason} ->
+                    logger:warning("[nfnl_nflog] config recv failed: ~p", [Reason]),
+                    {error, Reason}
+            end;
         Err -> Err
     end.

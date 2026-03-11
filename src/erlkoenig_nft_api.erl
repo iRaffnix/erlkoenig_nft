@@ -102,7 +102,7 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 terminate(_Reason, #{listen := LSock, path := Path}) ->
-    case LSock of
+    _ = case LSock of
         undefined -> ok;
         _ -> socket:close(LSock)
     end,
@@ -121,11 +121,11 @@ listen(Path) ->
                     case socket:listen(Sock) of
                         ok -> {ok, Sock};
                         Err ->
-                            socket:close(Sock),
+                            _ = socket:close(Sock),
                             Err
                     end;
                 Err ->
-                    socket:close(Sock),
+                    _ = socket:close(Sock),
                     Err
             end;
         Err ->

@@ -25,7 +25,9 @@ jobs:
           path: |
             _build
             ~/.cache/rebar3
-          key: rebar3-otp27-${{ hashFiles('rebar.config') }}
+          key: rebar3-otp27-${{ runner.os }}-${{ hashFiles('rebar.lock', 'rebar.config') }}
+          restore-keys: |
+            rebar3-otp27-${{ runner.os }}-
 
       - name: Compile
         run: rebar3 compile
@@ -74,3 +76,59 @@ jobs:
 
       - name: Test DSL
         run: cd dsl && mix test
+
+  release:
+    name: Release ${{ matrix.target.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: x86_64-glibc
+            container: debian:12
+            install: |
+              apt-get update
+              apt-get install -y curl unzip git make gcc g++ libc6-dev openssl libssl-dev tar xz-utils
+          - name: x86_64-musl
+            container: alpine:3.20
+            install: |
+              apk add --no-cache bash curl unzip git make gcc g++ musl-dev openssl-dev tar xz
+
+    container:
+      image: ${{ matrix.target.container }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OS deps
+        run: ${{ matrix.target.install }}
+
+      - name: Setup Beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.24'
+
+      - name: Cache rebar3
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            ~/.cache/rebar3
+          key: rebar3-release-otp27-${{ matrix.target.name }}-${{ hashFiles('rebar.lock', 'rebar.config') }}
+          restore-keys: |
+            rebar3-release-otp27-${{ matrix.target.name }}-
+
+      - name: Build release
+        run: rebar3 as prod tar
+
+      - name: Collect artifact
+        run: |
+          mkdir -p out
+          find _build/prod/rel -name '*.tar.gz' -exec cp {} out/${{ github.event.repository.name }}-${{ matrix.target.name }}.tar.gz \;
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target.name }}
+          path: out/*.tar.gz

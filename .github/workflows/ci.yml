@@ -87,10 +87,10 @@ jobs:
         target:
           - name: x86_64-glibc
             image: erlang:27-slim
-            deps: apt-get update && apt-get install -y git make gcc g++
+            deps: apt-get update && apt-get install -y git make gcc g++ curl
           - name: x86_64-musl
             image: erlang:27-alpine
-            deps: apk add --no-cache git make gcc g++ musl-dev
+            deps: apk add --no-cache git make gcc g++ musl-dev curl
 
     container:
       image: ${{ matrix.target.image }}

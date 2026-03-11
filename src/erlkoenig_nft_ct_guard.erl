@@ -337,17 +337,31 @@ is_banned(SrcIP) ->
     ets:member(?GUARD_BANS, SrcIP).
 
 try_ban(SrcIP) ->
-    try
-        erlkoenig_nft:ban(SrcIP)
+    try erlkoenig_nft:ban(SrcIP) of
+        ok -> ok;
+        {error, Reason} ->
+            logger:error("[ct_guard] ban failed for ~s: ~p",
+                         [erlkoenig_nft_ip:format(SrcIP), Reason]),
+            {error, Reason}
     catch
-        _:_ -> ok
+        C:R ->
+            logger:error("[ct_guard] ban crashed for ~s: ~p:~p",
+                         [erlkoenig_nft_ip:format(SrcIP), C, R]),
+            {error, {C, R}}
     end.
 
 try_unban(SrcIP) ->
-    try
-        erlkoenig_nft:unban(SrcIP)
+    try erlkoenig_nft:unban(SrcIP) of
+        ok -> ok;
+        {error, Reason} ->
+            logger:error("[ct_guard] unban failed for ~s: ~p",
+                         [erlkoenig_nft_ip:format(SrcIP), Reason]),
+            {error, Reason}
     catch
-        _:_ -> ok
+        C:R ->
+            logger:error("[ct_guard] unban crashed for ~s: ~p:~p",
+                         [erlkoenig_nft_ip:format(SrcIP), C, R]),
+            {error, {C, R}}
     end.
 
 %% ===================================================================
@@ -453,5 +467,7 @@ broadcast(Msg) ->
         _ = [Pid ! Msg || Pid <- Members],
         ok
     catch
-        _:_ -> ok
+        C:R ->
+            logger:warning("[ct_guard] broadcast failed: ~p:~p", [C, R]),
+            ok
     end.

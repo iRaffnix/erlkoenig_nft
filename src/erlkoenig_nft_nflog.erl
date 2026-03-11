@@ -98,7 +98,8 @@ request_recv(Sock) ->
             request_recv(Sock);
         {select, _SelectInfo} ->
             ok;
-        {error, _} ->
+        {error, Reason} ->
+            logger:warning("[erlkoenig_nft_nflog] recv failed: ~p", [Reason]),
             ok
     end.
 
@@ -110,7 +111,8 @@ recv_loop(Sock) ->
             recv_loop(Sock);
         {select, _} ->
             ok;
-        {error, _} ->
+        {error, Reason} ->
+            logger:warning("[erlkoenig_nft_nflog] recv_loop failed: ~p", [Reason]),
             ok
     end.
 
@@ -212,7 +214,9 @@ broadcast(Msg) ->
         _ = [Pid ! Msg || Pid <- Members],
         ok
     catch
-        _:_ -> ok
+        C:R ->
+            logger:warning("[erlkoenig_nft_nflog] broadcast failed: ~p:~p", [C, R]),
+            ok
     end.
 
 -spec strip_null(binary()) -> binary().

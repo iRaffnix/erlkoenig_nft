@@ -183,7 +183,9 @@ broadcast(Msg) ->
         _ = [Pid ! Msg || Pid <- Members],
         ok
     catch
-        _:_ -> ok
+        C:R ->
+            logger:warning("[erlkoenig_nft_counter] broadcast failed: ~p:~p", [C, R]),
+            ok
     end.
 
 -spec check_thresholds(binary(), [threshold()], map()) -> ok.

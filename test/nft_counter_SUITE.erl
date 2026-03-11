@@ -85,8 +85,8 @@ kernel_named_counter(_Config) ->
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
         fun(Seq) -> nft_object:add_counter(?NFPROTO_INET, ?TABLE, <<"test_cnt">>, Seq) end
     ]),
-    Output = os:cmd("nft list counters inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual(nomatch, string:find(Output, "test_cnt")),
+    Items = nft_json("list counters inet " ++ binary_to_list(?TABLE)),
+    ?assertMatch([_], [C || #{<<"counter">> := C = #{<<"name">> := <<"test_cnt">>}} <- Items]),
     nfnl_server:stop(Pid).
 
 kernel_counter_in_rule(_Config) ->
@@ -106,10 +106,11 @@ kernel_counter_in_rule(_Config) ->
              nft_expr_ir:counter(),
              nft_expr_ir:accept()])
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
-    ?assertNotEqual(nomatch, string:find(Output, "counter")),
-    ?assertNotEqual(nomatch, string:find(Output, "tcp dport 80")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    Rules = [R || #{<<"rule">> := R} <- Items],
+    ?assertMatch([_], Rules),
+    [#{<<"expr">> := Exprs}] = Rules,
+    ?assert(lists:any(fun(E) -> maps:is_key(<<"counter">>, E) end, Exprs)),
     nfnl_server:stop(Pid).
 
 kernel_counter_values(_Config) ->
@@ -118,13 +119,23 @@ kernel_counter_values(_Config) ->
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
         fun(Seq) -> nft_object:add_counter(?NFPROTO_INET, ?TABLE, <<"val_cnt">>, Seq) end
     ]),
-    Output = os:cmd("nft list counters inet " ++ binary_to_list(?TABLE)),
-    ?assertNotEqual(nomatch, string:find(Output, "val_cnt")),
-    ?assertNotEqual(nomatch, string:find(Output, "packets 0")),
-    ?assertNotEqual(nomatch, string:find(Output, "bytes 0")),
+    Items = nft_json("list counters inet " ++ binary_to_list(?TABLE)),
+    [Counter] = [C || #{<<"counter">> := C = #{<<"name">> := <<"val_cnt">>}} <- Items],
+    ?assertEqual(0, maps:get(<<"packets">>, Counter)),
+    ?assertEqual(0, maps:get(<<"bytes">>, Counter)),
     nfnl_server:stop(Pid).
 
 %% --- Helpers ---
+
+nft_json(Cmd) ->
+    case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
+        [] -> [];
+        Output ->
+            case catch json:decode(list_to_binary(Output)) of
+                #{<<"nftables">> := Items} -> Items;
+                _ -> ct:fail({nft_json_failed, Cmd, Output})
+            end
+    end.
 
 decode_expr(Bin) ->
     Decoded = nfnl_attr:decode(Bin),

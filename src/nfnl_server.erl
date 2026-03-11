@@ -200,7 +200,7 @@ collect_loop(Sock, Remaining, Acc) ->
                     Err
             end;
         {error, timeout} ->
-            ok;
+            {error, timeout};
         {error, _} = Err ->
             Err
     end.

@@ -94,10 +94,9 @@ kernel_create_input_chain(_Config) ->
             priority => 0, policy => accept
         }, Seq) end
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
-    ?assertNotEqual([], Output),
-    ?assertNotEqual(nomatch, string:find(Output, "input")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := ?CHAIN}} <- Items],
+    ?assertEqual(?CHAIN, maps:get(<<"name">>, Chain)),
     nfnl_server:stop(Pid).
 
 kernel_chain_hook(_Config) ->
@@ -110,11 +109,11 @@ kernel_chain_hook(_Config) ->
             priority => 100, policy => accept
         }, Seq) end
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
-    ?assertNotEqual(nomatch, string:find(Output, "type filter")),
-    ?assertNotEqual(nomatch, string:find(Output, "hook input")),
-    ?assertNotEqual(nomatch, string:find(Output, "priority 100")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := ?CHAIN}} <- Items],
+    ?assertEqual(<<"filter">>, maps:get(<<"type">>, Chain)),
+    ?assertEqual(<<"input">>, maps:get(<<"hook">>, Chain)),
+    ?assertEqual(100, maps:get(<<"prio">>, Chain)),
     nfnl_server:stop(Pid).
 
 kernel_chain_policy_accept(_Config) ->
@@ -127,9 +126,9 @@ kernel_chain_policy_accept(_Config) ->
             priority => 0, policy => accept
         }, Seq) end
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
-    ?assertNotEqual(nomatch, string:find(Output, "policy accept")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := ?CHAIN}} <- Items],
+    ?assertEqual(<<"accept">>, maps:get(<<"policy">>, Chain)),
     nfnl_server:stop(Pid).
 
 kernel_chain_policy_drop(_Config) ->
@@ -142,6 +141,19 @@ kernel_chain_policy_drop(_Config) ->
             priority => 0, policy => drop
         }, Seq) end
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE) ++ " fwd"),
-    ?assertNotEqual(nomatch, string:find(Output, "policy drop")),
+    Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
+    [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := <<"fwd">>}} <- Items],
+    ?assertEqual(<<"drop">>, maps:get(<<"policy">>, Chain)),
     nfnl_server:stop(Pid).
+
+%% --- Helpers ---
+
+nft_json(Cmd) ->
+    case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
+        [] -> [];
+        Output ->
+            case catch json:decode(list_to_binary(Output)) of
+                #{<<"nftables">> := Items} -> Items;
+                _ -> ct:fail({nft_json_failed, Cmd, Output})
+            end
+    end.

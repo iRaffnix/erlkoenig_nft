@@ -1,12 +1,11 @@
 %%% ==========================================================================
 %%% 5. VPN Gateway / NAT Router
 %%% ==========================================================================
-%%% WireGuard VPN gateway with SPA authentication.
+%%% WireGuard VPN gateway with NAT.
 %%% Routes traffic between WireGuard clients and the internet.
 %%% Masquerade (SNAT) for outgoing NAT.
 %%%
 %%% Features used:
-%%%   - WireGuard SPA (full stack)
 %%%   - iifname_accept (trust WireGuard interface)
 %%%   - forward_established (forward chain for routing)
 %%%   - masq (masquerade/SNAT for NAT)
@@ -18,11 +17,9 @@
     table => <<"vpngw">>,
     sets => [
         {<<"blocklist">>, ipv4_addr},
-        {<<"blocklist6">>, ipv6_addr},
-        {<<"wg_allow">>, ipv4_addr, #{flags => [timeout], timeout => 300000}},
-        {<<"wg_allow6">>, ipv6_addr, #{flags => [timeout], timeout => 300000}}
+        {<<"blocklist6">>, ipv6_addr}
     ],
-    counters => [ssh, wg, spa, forwarded, banned, dropped],
+    counters => [ssh, wg, forwarded, banned, dropped],
     chains => [
         %% Prerouting: drop banned before any processing
         #{name => <<"prerouting_ban">>, hook => prerouting, type => filter,
@@ -37,18 +34,15 @@
           rules => [
               ct_established_accept,
               iif_accept,
-              %% SPA knock
-              {nflog_capture_udp, 61820, <<"SPA: ">>, 3},
-              %% WireGuard: SPA-gated
-              {set_lookup_udp_accept, <<"wg_allow">>, 51820},
-              {set_lookup_udp_accept, <<"wg_allow6">>, 51820},
               %% SSH for management
               {tcp_accept_limited, 22, ssh, #{rate => 10, burst => 3}},
+              %% WireGuard
+              {udp_accept, 51820, wg},
               %% Trust traffic from WireGuard interface
               {iifname_accept, <<"wg0">>},
               {protocol_accept, icmp},
               {protocol_accept, icmpv6},
-              {log_drop_nflog, <<"GW-DROP: ">>, 1, dropped}
+              {log_drop, <<"GW-DROP: ">>, dropped}
           ]},
         %% Forward: route traffic for VPN clients
         #{name => <<"forward">>, hook => forward, type => filter,
@@ -80,14 +74,5 @@
         ban_duration => 3600,
         whitelist => [{127, 0, 0, 1}],
         cleanup_interval => 30000
-    },
-    wg_auth => #{
-        secret => <<"change_me_to_64_hex_chars_of_real_entropy_now_please_really!!!!">>,
-        spa_port => 61820,
-        wg_port => 51820,
-        nflog_group => 3,
-        timeout => 300,
-        timestamp_window => 30,
-        require_totp => false
     }
 }.

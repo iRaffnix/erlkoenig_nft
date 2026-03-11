@@ -9,12 +9,31 @@ defmodule ErlkoenigNft.CLI do
     erlkoenig inspect <file.exs>        Show raw Erlang term structure
     erlkoenig diff <a.exs> <b.exs>      Compare two firewall configs
     erlkoenig list [dir]                List available examples
+
+    erlkoenig status                    Show daemon status
+    erlkoenig ban <ip>                  Ban an IP address
+    erlkoenig unban <ip>                Unban an IP address
+    erlkoenig reload                    Reload config from disk
+    erlkoenig apply <file.exs>          Compile and apply to running daemon
+    erlkoenig counters                  Show live counter rates
+    erlkoenig guard [stats|banned]      Show ct_guard info
   """
 
-  alias ErlkoenigNft.CLI.Formatter
+  alias ErlkoenigNft.CLI.{Formatter, Daemon}
 
   def main(args) do
     case args do
+      # Daemon commands (talk to running daemon via socket)
+      ["status" | _] -> cmd_daemon("status")
+      ["ban", ip] -> cmd_daemon("ban", %{"ip" => ip})
+      ["unban", ip] -> cmd_daemon("unban", %{"ip" => ip})
+      ["reload" | _] -> cmd_daemon("reload")
+      ["apply" | rest] -> cmd_apply(rest)
+      ["counters" | _] -> cmd_daemon("counters")
+      ["guard", "stats"] -> cmd_daemon("guard_stats")
+      ["guard", "banned"] -> cmd_daemon("guard_banned")
+      ["guard" | _] -> error("Usage: erlkoenig guard [stats|banned]")
+      # Local commands (no daemon needed)
       ["show" | rest] -> cmd_show(rest)
       ["compile" | rest] -> cmd_compile(rest)
       ["validate" | rest] -> cmd_validate(rest)
@@ -29,7 +48,151 @@ defmodule ErlkoenigNft.CLI do
     end
   end
 
-  # --- Commands ---
+  # --- Daemon commands ---
+
+  defp cmd_daemon(cmd, opts \\ %{}) do
+    case Daemon.call(cmd, opts) do
+      {:ok, %{"ok" => true, "data" => data}} ->
+        render_daemon_response(cmd, data)
+
+      {:ok, %{"ok" => true}} ->
+        success("#{cmd}: ok")
+
+      {:ok, %{"ok" => false, "error" => err}} ->
+        error(err)
+        System.halt(1)
+
+      {:error, :not_running} ->
+        error("Cannot connect to daemon. Is erlkoenig_nft running?")
+        error("  Check: systemctl status erlkoenig_nft")
+        System.halt(1)
+
+      {:error, :permission_denied} ->
+        error("Permission denied. Add your user to the erlkoenig group:")
+        error("  sudo usermod -aG erlkoenig $(whoami)")
+        System.halt(1)
+
+      {:error, reason} ->
+        error("Connection error: #{inspect(reason)}")
+        System.halt(1)
+    end
+  end
+
+  defp cmd_apply(args) do
+    {file, _opts} = parse_file_args(args)
+    modules = load_file!(file)
+
+    fw_mods = for {:firewall, m} <- modules, do: m
+    guard_mods = for {:guard, m} <- modules, do: m
+    watch_mods = for {:watch, m} <- modules, do: m
+
+    if fw_mods == [] do
+      error("No Firewall module found in #{file}")
+      System.halt(1)
+    end
+
+    config = hd(fw_mods).config()
+    term = build_full_term(config, guard_mods, watch_mods)
+    term_string = :io_lib.format(~c"~tp.~n", [term]) |> IO.iodata_to_binary()
+
+    info("Compiled #{Path.basename(file)}")
+
+    case Daemon.call("apply", %{"term" => term_string}) do
+      {:ok, %{"ok" => true}} ->
+        success("Applied to running daemon")
+
+      {:ok, %{"ok" => false, "error" => err}} ->
+        error("Apply failed: #{err}")
+        System.halt(1)
+
+      {:error, :not_running} ->
+        error("Cannot connect to daemon. Is erlkoenig_nft running?")
+        System.halt(1)
+
+      {:error, reason} ->
+        error("Connection error: #{inspect(reason)}")
+        System.halt(1)
+    end
+  end
+
+  defp render_daemon_response("status", data) do
+    header("erlkoenig_nft")
+    if t = data["table"], do: IO.puts("  table:    #{t}")
+
+    # status has config embedded — pull chains from config if present
+    config = data["config"] || data
+
+    case config["chains"] do
+      chains when is_list(chains) ->
+        IO.puts("  chains:   #{length(chains)}")
+
+        for c <- chains do
+          rules = c["rules"] || []
+          IO.puts("    #{color(:cyan, c["name"])} #{c["hook"]} #{c["policy"]} (#{length(rules)} rules)")
+        end
+
+      _ ->
+        :ok
+    end
+
+    case config["sets"] do
+      sets when is_list(sets) -> IO.puts("  sets:     #{length(sets)}")
+      _ -> :ok
+    end
+
+    case data["counters"] do
+      n when is_integer(n) -> IO.puts("  counters: #{n}")
+      c when is_list(c) -> IO.puts("  counters: #{length(c)}")
+      _ -> :ok
+    end
+
+    IO.puts("  running:  #{data["running"] || false}")
+  end
+
+  defp render_daemon_response("counters", data) do
+    header("counters")
+
+    for {name, val} <- data do
+      cond do
+        is_map(val) ->
+          pps = val["pps"] || val["rate"] || 0
+          IO.puts("  #{String.pad_trailing(name, 16)} #{pps} pps")
+
+        true ->
+          IO.puts("  #{String.pad_trailing(name, 16)} #{inspect(val)}")
+      end
+    end
+  end
+
+  defp render_daemon_response("guard_stats", data) do
+    header("ct_guard stats")
+
+    for {key, val} <- data do
+      IO.puts("  #{String.pad_trailing(key, 20)} #{inspect(val)}")
+    end
+  end
+
+  defp render_daemon_response("guard_banned", data) do
+    header("banned IPs")
+
+    ips = cond do
+      is_list(data) -> data
+      is_map(data) and Map.has_key?(data, "ips") -> data["ips"]
+      true -> [data]
+    end
+
+    if ips == [] do
+      info("  (none)")
+    else
+      for ip <- ips, do: IO.puts("  #{inspect(ip)}")
+    end
+  end
+
+  defp render_daemon_response(_cmd, data) do
+    IO.puts(inspect(data, pretty: true, width: 80))
+  end
+
+  # --- Local commands ---
 
   defp cmd_show(args) do
     {file, _opts} = parse_file_args(args)
@@ -157,25 +320,39 @@ defmodule ErlkoenigNft.CLI do
 
   defp cmd_help do
     IO.puts("""
-    #{color(:bold, "erlkoenig")} — nf_tables firewall DSL compiler
+    #{color(:bold, "erlkoenig")} — nf_tables firewall DSL compiler & daemon CLI
 
     #{color(:bold, "USAGE")}
       erlkoenig <command> [options]
 
-    #{color(:bold, "COMMANDS")}
-      #{color(:cyan, "show")} <file.exs>              Render firewall as nft-style ruleset
-      #{color(:cyan, "compile")} <file.exs> [-o path]  Compile DSL to .term config file
-      #{color(:cyan, "validate")} <file.exs>           Validate DSL config for errors
-      #{color(:cyan, "inspect")} <file.exs>            Show raw Erlang term structure
-      #{color(:cyan, "diff")} <a.exs> <b.exs>          Compare two firewall configs
-      #{color(:cyan, "list")} [dir]                   List available example configs
+    #{color(:bold, "DAEMON COMMANDS")} (talk to running erlkoenig_nft)
+      #{color(:cyan, "status")}                       Show daemon status
+      #{color(:cyan, "ban")} <ip>                      Ban an IP address
+      #{color(:cyan, "unban")} <ip>                    Unban an IP address
+      #{color(:cyan, "reload")}                       Reload config from disk
+      #{color(:cyan, "apply")} <file.exs>              Compile and apply to running daemon
+      #{color(:cyan, "counters")}                     Show live counter rates
+      #{color(:cyan, "guard")} stats                   Show detection statistics
+      #{color(:cyan, "guard")} banned                  Show banned IPs
+
+    #{color(:bold, "LOCAL COMMANDS")} (no daemon needed)
+      #{color(:cyan, "show")} <file.exs>               Render firewall as nft-style ruleset
+      #{color(:cyan, "compile")} <file.exs> [-o path]   Compile DSL to .term config file
+      #{color(:cyan, "validate")} <file.exs>            Validate DSL config for errors
+      #{color(:cyan, "inspect")} <file.exs>             Show raw Erlang term structure
+      #{color(:cyan, "diff")} <a.exs> <b.exs>           Compare two firewall configs
+      #{color(:cyan, "list")} [dir]                    List available example configs
 
     #{color(:bold, "EXAMPLES")}
-      erlkoenig show examples/01_hardened_webserver.exs
-      erlkoenig compile examples/01_hardened_webserver.exs -o /etc/erlkoenig_nft/firewall.term
-      erlkoenig validate examples/03_mail_server.exs
-      erlkoenig diff examples/01_hardened_webserver.exs examples/10_dev_server.exs
-      erlkoenig list examples/
+      erlkoenig show examples/hardened_webserver.exs
+      erlkoenig compile examples/hardened_webserver.exs -o /etc/erlkoenig_nft/firewall.term
+      erlkoenig apply examples/hardened_webserver.exs
+      erlkoenig ban 10.0.0.5
+      erlkoenig counters
+      erlkoenig guard banned
+
+    #{color(:bold, "ENVIRONMENT")}
+      ERLKOENIG_SOCKET   Override daemon socket path (default: /var/run/erlkoenig.sock)
 
     #{color(:bold, "DOCUMENTATION")}
       https://github.com/iRaffnix/erlkoenig_nft

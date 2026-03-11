@@ -1,2 +1,10 @@
--name erlkoenig_nft@127.0.0.1
+## No Erlang distribution — all admin ops go through the Unix socket API.
+## This avoids exposing epmd/distribution ports on a firewall box.
+## To enable remote console, uncomment and set a strong random cookie:
+##
+##   -sname erlkoenig_nft
+##   -setcookie <run: openssl rand -base64 32>
+##   -kernel inet_dist_use_interface {127,0,0,1}
+##   -start_epmd false
+
 +sbwt very_short

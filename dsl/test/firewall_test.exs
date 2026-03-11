@@ -66,6 +66,9 @@ defmodule ErlkoenigNft.FirewallTest do
       assert Builder.set_lookup_drop("bl") == {:set_lookup_drop, "bl"}
       assert Builder.connlimit_drop(100) == {:connlimit_drop, 100, 0}
       assert Builder.dnat({10, 0, 0, 1}, 80) == {:dnat, {10, 0, 0, 1}, 80}
+      assert Builder.nflog_capture_udp(61820, "LOG:", 0) == {:nflog_capture_udp, 61820, "LOG:", 0}
+      assert Builder.set_lookup_udp_accept("allowlist", 51820) == {:set_lookup_udp_accept, "allowlist", 51820}
+      assert Builder.log_drop_nflog("DROP: ", 0, :dropped) == {:log_drop_nflog, "DROP: ", 0, "dropped"}
     end
 
     test "tcp_accept with counter" do
@@ -90,6 +93,7 @@ defmodule ErlkoenigNft.FirewallTest do
       b = Builder.new("t")
       b = Builder.add_chain(b, "in", [hook: :input, policy: :drop], [:accept])
       term = Builder.to_term(b)
+      assert term.table == "t"
       refute Map.has_key?(term, :sets)
       refute Map.has_key?(term, :counters)
     end

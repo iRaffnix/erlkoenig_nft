@@ -333,6 +333,12 @@ build_rule(Table, Chain, ct_established_accept, _Config) ->
     encode_rule(Table, Chain, nft_rules:ct_established_accept());
 build_rule(Table, Chain, iif_accept, _Config) ->
     encode_rule(Table, Chain, nft_rules:iif_accept());
+build_rule(Table, Chain, icmp_accept, _Config) ->
+    encode_rule(Table, Chain, nft_rules:icmp_accept());
+build_rule(Table, Chain, icmpv6_accept, _Config) ->
+    encode_rule(Table, Chain, nft_rules:icmpv6_accept());
+build_rule(Table, Chain, accept, _Config) ->
+    encode_rule(Table, Chain, [nft_expr_ir:accept()]);
 
 %% TCP/UDP with named counter
 build_rule(Table, Chain, {tcp_accept, Port, Counter}, _Config) ->

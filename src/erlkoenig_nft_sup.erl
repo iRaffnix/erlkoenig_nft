@@ -112,6 +112,15 @@ init([]) ->
             shutdown => 10000,
             type     => worker,
             modules  => [erlkoenig_nft_firewall]
+        },
+        %% 8. API socket server — JSON over Unix domain socket
+        #{
+            id       => erlkoenig_nft_api,
+            start    => {erlkoenig_nft_api, start_link, []},
+            restart  => permanent,
+            shutdown => 5000,
+            type     => worker,
+            modules  => [erlkoenig_nft_api]
         }
     ],
     {ok, {SupFlags, Children}}.

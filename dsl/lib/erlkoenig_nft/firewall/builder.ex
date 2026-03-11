@@ -115,6 +115,10 @@ defmodule ErlkoenigNft.Firewall.Builder do
 
   def log_reject(prefix), do: {:log_reject, prefix}
 
+  def nflog_capture_udp(port, prefix, group), do: {:nflog_capture_udp, port, prefix, group}
+  def set_lookup_udp_accept(set_name, port), do: {:set_lookup_udp_accept, set_name, port}
+  def log_drop_nflog(prefix, group, counter), do: {:log_drop_nflog, prefix, group, to_string(counter)}
+
   def dnat(ip, port), do: {:dnat, ip, port}
 
   # --- Rule accumulator (used by chain macro) ---
@@ -131,6 +135,7 @@ defmodule ErlkoenigNft.Firewall.Builder do
 
   def to_term(state) do
     base = %{
+      table: state.name,
       chains: Enum.map(state.chains, &chain_to_term/1)
     }
 

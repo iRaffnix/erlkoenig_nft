@@ -4,5 +4,6 @@ rebar.lock
 dsl/_build/
 dsl/deps/
 dsl/mix.lock
+dsl/erlkoenig
 *.beam
 erl_crash.dump

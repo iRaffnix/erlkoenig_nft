@@ -15,12 +15,7 @@ NoNewPrivileges=yes
 ProtectHome=yes
 PrivateTmp=yes
 ProtectClock=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
 RestrictSUIDSGID=yes
-MemoryDenyWriteExecute=no
-ReadWritePaths=/var/run /opt/erlkoenig_nft/log
-ReadOnlyPaths=/opt/erlkoenig_nft
 
 [Install]
 WantedBy=multi-user.target

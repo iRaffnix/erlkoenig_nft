@@ -41,6 +41,7 @@ Commands: status, ban, unban, reload, apply, counters, guard_stats, guard_banned
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, terminate/2]).
 
 -define(DEFAULT_SOCKET, "/var/run/erlkoenig.sock").
+-define(MAX_BUF_SIZE, 1048576). %% 1 MB max request size
 
 %% --- Public API ---
 
@@ -53,16 +54,12 @@ start_link() ->
 
 init([]) ->
     Path = socket_path(),
-    %% Remove stale socket file
     _ = file:delete(Path),
     case listen(Path) of
         {ok, LSock} ->
-            %% Set socket file permissions: owner+group rw
             _ = file:change_mode(Path, 8#0660),
-            Group = os:getenv("ERLKOENIG_GROUP", "erlkoenig"),
-            _ = os:cmd("chgrp " ++ Group ++ " " ++ Path ++ " 2>/dev/null"),
+            set_socket_group(Path),
             logger:info("API socket listening on ~s", [Path]),
-            %% Start async accept loop
             {select, _} = socket:accept(LSock, nowait),
             {ok, #{listen => LSock, path => Path, handlers => #{}}};
         {error, Reason} ->
@@ -84,7 +81,6 @@ handle_info({'$socket', LSock, select, _Ref}, #{listen := LSock} = State) ->
             _ = socket:setopt(ClientSock, {otp, controlling_process}, Pid),
             Mon = monitor(process, Pid),
             Handlers = maps:put(Pid, Mon, maps:get(handlers, State)),
-            %% Accept next connection
             {select, _} = socket:accept(LSock, nowait),
             {noreply, State#{handlers := Handlers}};
         {error, Reason} ->
@@ -112,6 +108,50 @@ terminate(_Reason, _State) ->
     ok.
 
 %% --- Internal: Socket setup ---
+
+set_socket_group(Path) ->
+    Group = os:getenv("ERLKOENIG_GROUP", "erlkoenig"),
+    case valid_group_name(Group) of
+        true ->
+            case group_gid(Group) of
+                {ok, Gid} ->
+                    _ = file:change_group(Path, Gid),
+                    ok;
+                error ->
+                    logger:warning("Group '~s' not found, socket accessible to owner only", [Group])
+            end;
+        false ->
+            logger:warning("Invalid group name '~s', ignoring", [Group])
+    end.
+
+valid_group_name(Name) ->
+    lists:all(fun(C) ->
+        (C >= $a andalso C =< $z) orelse
+        (C >= $A andalso C =< $Z) orelse
+        (C >= $0 andalso C =< $9) orelse
+        C =:= $_ orelse C =:= $-
+    end, Name) andalso length(Name) > 0 andalso length(Name) =< 32.
+
+group_gid(Name) ->
+    %% Read /etc/group to resolve group name → gid
+    case file:read_file("/etc/group") of
+        {ok, Bin} ->
+            Lines = binary:split(Bin, <<"\n">>, [global]),
+            NameBin = list_to_binary(Name),
+            find_gid(NameBin, Lines);
+        {error, _} ->
+            error
+    end.
+
+find_gid(_Name, []) -> error;
+find_gid(Name, [Line | Rest]) ->
+    case binary:split(Line, <<":">>, [global]) of
+        [Name, _, GidBin | _] ->
+            try {ok, binary_to_integer(GidBin)}
+            catch _:_ -> error end;
+        _ ->
+            find_gid(Name, Rest)
+    end.
 
 listen(Path) ->
     case socket:open(local, stream, default) of
@@ -148,6 +188,10 @@ socket_path() ->
 handle_client(Sock) ->
     client_loop(Sock, <<>>).
 
+client_loop(Sock, Buf) when byte_size(Buf) > ?MAX_BUF_SIZE ->
+    logger:warning("API client exceeded max buffer size, disconnecting"),
+    _ = socket:close(Sock),
+    ok;
 client_loop(Sock, Buf) ->
     case binary:match(Buf, <<"\n">>) of
         {Pos, 1} ->
@@ -157,14 +201,15 @@ client_loop(Sock, Buf) ->
             RespBin = [json:encode(Response), <<"\n">>],
             case socket:send(Sock, RespBin) of
                 ok -> client_loop(Sock, Rest);
-                {error, _} -> socket:close(Sock)
+                {error, _} -> _ = socket:close(Sock), ok
             end;
         nomatch ->
             case socket:recv(Sock, 0, 30000) of
                 {ok, Data} ->
                     client_loop(Sock, <<Buf/binary, Data/binary>>);
                 {error, _} ->
-                    socket:close(Sock)
+                    _ = socket:close(Sock),
+                    ok
             end
     end.
 
@@ -173,9 +218,8 @@ process_request(Line) ->
         Cmd = json:decode(Line),
         dispatch(Cmd)
     catch
-        _:Reason ->
-            #{<<"ok">> => false, <<"error">> => iolist_to_binary(
-                io_lib:format("~p", [Reason]))}
+        _:_ ->
+            #{<<"ok">> => false, <<"error">> => <<"invalid request">>}
     end.
 
 %% --- Internal: Command dispatch ---
@@ -185,7 +229,8 @@ dispatch(#{<<"cmd">> := <<"status">>}) ->
         Data = erlkoenig_nft:status(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API status error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"ban">>, <<"ip">> := IP}) ->
@@ -193,46 +238,52 @@ dispatch(#{<<"cmd">> := <<"ban">>, <<"ip">> := IP}) ->
         ok = erlkoenig_nft:ban(binary_to_list(IP)),
         #{<<"ok">> => true, <<"data">> => #{<<"banned">> => IP}}
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API ban error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"ban failed">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"unban">>, <<"ip">> := IP}) ->
     try
         case erlkoenig_nft:unban(binary_to_list(IP)) of
             ok -> #{<<"ok">> => true, <<"data">> => #{<<"unbanned">> => IP}};
-            {error, R} -> #{<<"ok">> => false, <<"error">> => format_err(R)}
+            {error, _R} -> #{<<"ok">> => false, <<"error">> => <<"unban failed">>}
         end
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API unban error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"unban failed">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"reload">>}) ->
     try
         case erlkoenig_nft:reload() of
             ok -> #{<<"ok">> => true};
-            {error, R} -> #{<<"ok">> => false, <<"error">> => format_err(R)}
+            {error, _R} -> #{<<"ok">> => false, <<"error">> => <<"reload failed">>}
         end
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API reload error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"reload failed">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"apply">>, <<"term">> := TermStr}) ->
     try
-        Path = erlkoenig_nft_config:config_path(),
-        ConfigPath = case Path of
-            {ok, P} -> P;
-            {error, _} -> "/etc/erlkoenig_nft/firewall.term"
-        end,
-        TmpPath = ConfigPath ++ ".tmp",
-        ok = file:write_file(TmpPath, TermStr),
-        ok = file:rename(TmpPath, ConfigPath),
-        case erlkoenig_nft:reload() of
-            ok -> #{<<"ok">> => true};
-            {error, R} ->
-                #{<<"ok">> => false, <<"error">> => format_err(R)}
+        %% Validate the term parses before writing
+        case validate_config_term(TermStr) of
+            ok ->
+                ConfigPath = resolve_config_path(),
+                TmpPath = ConfigPath ++ ".tmp",
+                ok = file:write_file(TmpPath, TermStr),
+                ok = file:rename(TmpPath, ConfigPath),
+                case erlkoenig_nft:reload() of
+                    ok -> #{<<"ok">> => true};
+                    {error, _R} ->
+                        #{<<"ok">> => false, <<"error">> => <<"reload failed after apply">>}
+                end;
+            {error, Reason} ->
+                #{<<"ok">> => false, <<"error">> => Reason}
         end
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API apply error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"apply failed">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"counters">>}) ->
@@ -240,7 +291,8 @@ dispatch(#{<<"cmd">> := <<"counters">>}) ->
         Rates = erlkoenig_nft:rates(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Rates)}
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API counters error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"guard_stats">>}) ->
@@ -248,7 +300,8 @@ dispatch(#{<<"cmd">> := <<"guard_stats">>}) ->
         Stats = erlkoenig_nft:guard_stats(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Stats)}
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API guard_stats error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
 
 dispatch(#{<<"cmd">> := <<"guard_banned">>}) ->
@@ -256,14 +309,63 @@ dispatch(#{<<"cmd">> := <<"guard_banned">>}) ->
         Banned = erlkoenig_nft:guard_banned(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Banned)}
     catch _:E ->
-        #{<<"ok">> => false, <<"error">> => format_err(E)}
+        logger:warning("API guard_banned error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
 
-dispatch(#{<<"cmd">> := Cmd}) ->
-    #{<<"ok">> => false, <<"error">> => <<"unknown command: ", Cmd/binary>>};
+dispatch(#{<<"cmd">> := _}) ->
+    #{<<"ok">> => false, <<"error">> => <<"unknown command">>};
 
 dispatch(_) ->
     #{<<"ok">> => false, <<"error">> => <<"missing cmd field">>}.
+
+%% --- Internal: Config validation ---
+
+resolve_config_path() ->
+    case erlkoenig_nft_config:config_path() of
+        {ok, P} -> P;
+        {error, _} -> "/etc/erlkoenig_nft/firewall.term"
+    end.
+
+validate_config_term(TermStr) ->
+    %% Parse the term and check it has the required structure
+    case safe_consult_string(TermStr) of
+        {ok, [Config]} when is_map(Config) ->
+            case maps:is_key(table, Config) andalso maps:is_key(chains, Config) of
+                true -> ok;
+                false -> {error, <<"config must contain 'table' and 'chains' keys">>}
+            end;
+        {ok, _} ->
+            {error, <<"config must be a single map term">>};
+        {error, _} ->
+            {error, <<"config term failed to parse">>}
+    end.
+
+safe_consult_string(Bin) when is_binary(Bin) ->
+    safe_consult_string(binary_to_list(Bin));
+safe_consult_string(Str) ->
+    case erl_scan:string(Str) of
+        {ok, Tokens, _} ->
+            parse_terms(Tokens, []);
+        {error, _, _} ->
+            {error, scan_failed}
+    end.
+
+parse_terms([], Acc) ->
+    {ok, lists:reverse(Acc)};
+parse_terms(Tokens, Acc) ->
+    case erl_parse:parse_term(Tokens) of
+        {ok, Term} ->
+            %% Find remaining tokens after the dot
+            Rest = drop_until_dot(Tokens),
+            parse_terms(Rest, [Term | Acc]);
+        {error, _} ->
+            {error, parse_failed}
+    end.
+
+drop_until_dot([]) -> [];
+drop_until_dot([{dot, _} | Rest]) -> Rest;
+drop_until_dot([_ | Rest]) -> drop_until_dot(Rest).
 
 %% --- Internal: Term → JSON-safe conversion ---
 
@@ -293,6 +395,3 @@ term_to_json(T) ->
 term_to_json_key(K) when is_atom(K) -> atom_to_binary(K);
 term_to_json_key(K) when is_binary(K) -> K;
 term_to_json_key(K) -> iolist_to_binary(io_lib:format("~p", [K])).
-
-format_err(E) ->
-    iolist_to_binary(io_lib:format("~p", [E])).

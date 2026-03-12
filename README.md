@@ -4,11 +4,27 @@ A firewall engine written in pure Erlang that talks directly to the Linux
 kernel via `AF_NETLINK`. No C code. No NIFs. No `os:cmd("nft ...")`.
 Zero external dependencies.
 
-> **Early stage software.** erlkoenig_nft is under active development and has
-> not been battle-tested in production yet. The userspace VM tests cover rule
-> logic extensively (239 tests), but real-world kernel interaction has seen
-> limited testing. Review your config carefully before deploying, and don't
-> use this as your only line of defense on critical systems — yet.
+> **Early stage software — use in a VM only.** erlkoenig_nft is under active
+> development and we are working on getting it stable. It has not been
+> battle-tested in production yet. The userspace VM tests cover rule logic
+> extensively (239 tests), but real-world kernel interaction has seen limited
+> testing.
+>
+> **Do not run this on a bare-metal host or outside of a virtual machine.**
+> A misconfigured firewall can lock you out of your own machine. Always test
+> in a disposable VM where you can recover access through the hypervisor
+> console.
+>
+> **Do not run this if Docker is installed.** Docker manages its own
+> nf_tables/iptables rules for container networking. erlkoenig_nft will
+> overwrite those rules, breaking container connectivity and potentially
+> leaving you with no network access at all.
+>
+> **Do not enable the systemd service by default.** A unit file is included
+> (`erlkoenig_nft.service`), but do not enable it to start at boot until you
+> have thoroughly tested your configuration. If the firewall applies broken
+> rules on boot, it can lock you out permanently — you would need console
+> access to recover.
 >
 > Since erlkoenig_nft uses standard nf_tables under the hood, you can always
 > verify what's actually loaded in the kernel with `nft list ruleset`. This

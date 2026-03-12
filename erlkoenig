@@ -2,7 +2,7 @@
 # erlkoenig CLI — nf_tables firewall DSL compiler
 #
 # Build:  cd dsl && mix escript.build
-# Usage:  ./erlkoenig show examples/01_hardened_webserver.exs
+# Usage:  ./erlkoenig show examples/hardened_webserver.exs
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ESCRIPT="$SCRIPT_DIR/dsl/erlkoenig"

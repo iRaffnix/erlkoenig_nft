@@ -62,7 +62,7 @@ make                  # build Erlang core + Elixir DSL
 make erl              # or just the Erlang core
 
 # pick a config
-cp priv/examples/01_hardened_webserver.term priv/firewall.term
+cp priv/examples/hardened_webserver.term priv/firewall.term
 
 rebar3 shell          # needs CAP_NET_ADMIN
 ```
@@ -282,20 +282,19 @@ ErlkoenigNft.Firewall.Profiles.get(:open)
 
 ## Examples
 
-All 10 scenarios ship with both Erlang term configs and Elixir DSL versions:
+All 9 scenarios ship with both Erlang term configs and Elixir DSL versions:
 
-| # | Scenario | Erlang | Elixir |
-|---|----------|--------|--------|
-| 1 | Hardened web server | [`priv/examples/01_hardened_webserver.term`](priv/examples/01_hardened_webserver.term) | [`examples/01_hardened_webserver.exs`](examples/01_hardened_webserver.exs) |
-| 2 | Paranoid bastion (WireGuard SPA) | [`priv/examples/02_paranoid_bastion.term`](priv/examples/02_paranoid_bastion.term) | [`examples/02_paranoid_bastion.exs`](examples/02_paranoid_bastion.exs) |
-| 3 | Mail server (TLS enforcement) | [`priv/examples/03_mail_server.term`](priv/examples/03_mail_server.term) | [`examples/03_mail_server.exs`](examples/03_mail_server.exs) |
-| 4 | Database server (private subnet) | [`priv/examples/04_database_server.term`](priv/examples/04_database_server.term) | [`examples/04_database_server.exs`](examples/04_database_server.exs) |
-| 5 | VPN gateway (NAT + forwarding) | [`priv/examples/05_vpn_gateway.term`](priv/examples/05_vpn_gateway.term) | [`examples/05_vpn_gateway.exs`](examples/05_vpn_gateway.exs) |
-| 6 | DNS server (rate-limited) | [`priv/examples/06_dns_server.term`](priv/examples/06_dns_server.term) | [`examples/06_dns_server.exs`](examples/06_dns_server.exs) |
-| 7 | Game server (UDP port ranges) | [`priv/examples/07_game_server.term`](priv/examples/07_game_server.term) | [`examples/07_game_server.exs`](examples/07_game_server.exs) |
-| 8 | Reverse proxy (DNAT + connlimit) | [`priv/examples/08_reverse_proxy.term`](priv/examples/08_reverse_proxy.term) | [`examples/08_reverse_proxy.exs`](examples/08_reverse_proxy.exs) |
-| 9 | Docker host (bridge + containers) | [`priv/examples/09_docker_host.term`](priv/examples/09_docker_host.term) | [`examples/09_docker_host.exs`](examples/09_docker_host.exs) |
-| 10 | Dev server (relaxed, reject) | [`priv/examples/10_dev_server.term`](priv/examples/10_dev_server.term) | [`examples/10_dev_server.exs`](examples/10_dev_server.exs) |
+| Scenario | Erlang | Elixir |
+|----------|--------|--------|
+| Hardened web server | [`priv/examples/hardened_webserver.term`](priv/examples/hardened_webserver.term) | [`examples/hardened_webserver.exs`](examples/hardened_webserver.exs) |
+| Mail server (TLS enforcement) | [`priv/examples/mail_server.term`](priv/examples/mail_server.term) | [`examples/mail_server.exs`](examples/mail_server.exs) |
+| Database server (private subnet) | [`priv/examples/database_server.term`](priv/examples/database_server.term) | [`examples/database_server.exs`](examples/database_server.exs) |
+| VPN gateway (NAT + forwarding) | [`priv/examples/vpn_gateway.term`](priv/examples/vpn_gateway.term) | [`examples/vpn_gateway.exs`](examples/vpn_gateway.exs) |
+| DNS server (rate-limited) | [`priv/examples/dns_server.term`](priv/examples/dns_server.term) | [`examples/dns_server.exs`](examples/dns_server.exs) |
+| Game server (UDP port ranges) | [`priv/examples/game_server.term`](priv/examples/game_server.term) | [`examples/game_server.exs`](examples/game_server.exs) |
+| Reverse proxy (DNAT + connlimit) | [`priv/examples/reverse_proxy.term`](priv/examples/reverse_proxy.term) | [`examples/reverse_proxy.exs`](examples/reverse_proxy.exs) |
+| Docker host (bridge + containers) | [`priv/examples/docker_host.term`](priv/examples/docker_host.term) | [`examples/docker_host.exs`](examples/docker_host.exs) |
+| Dev server (relaxed, reject) | [`priv/examples/dev_server.term`](priv/examples/dev_server.term) | [`examples/dev_server.exs`](examples/dev_server.exs) |
 
 ## Erlang Term Config
 

@@ -3,9 +3,9 @@ Description=Erlkoenig nf_tables firewall
 After=network.target
 
 [Service]
-Type=forking
-ExecStart=/opt/erlkoenig_nft/bin/erlkoenig_nft daemon
-ExecStop=/opt/erlkoenig_nft/bin/erlkoenig_nft stop
+Type=simple
+Environment=HOME=/opt/erlkoenig_nft
+ExecStart=/opt/erlkoenig_nft/bin/erlkoenig_nft_run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536

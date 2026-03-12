@@ -1,9 +1,7 @@
--sname erlkoenig_nft
+## Erlang distribution is disabled by default — the socket API does not need it.
+## Uncomment below if you need remote_console, ping, or RPC:
+## -sname erlkoenig_nft
+## -kernel inet_dist_use_interface {127,0,0,1}
 
-## Bind distribution to localhost only — not reachable from network
--kernel inet_dist_use_interface {127,0,0,1}
-
-## Cookie is auto-generated per install in releases/COOKIE
-## Override with: -setcookie <your-secret>
-
+-setcookie erlkoenig_nft_default
 +sbwt very_short

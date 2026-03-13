@@ -45,9 +45,9 @@ be unique within a batch.
 Corresponds to libnftnl src/set.c.
 """.
 
--export([add/3]).
+-export([add/3, add_meter/3, add_vmap/4, add_concat/3]).
 
--export_type([set_opts/0, set_type/0]).
+-export_type([set_opts/0, set_type/0, concat_opts/0]).
 
 %% --- Types ---
 
@@ -64,31 +64,16 @@ Corresponds to libnftnl src/set.c.
     timeout  => non_neg_integer()   %% milliseconds
 }.
 
-%% --- Constants ---
+-type concat_opts() :: #{
+    table      := binary(),
+    name       := binary(),
+    fields     := [set_type()],   %% e.g. [ipv4_addr, inet_service]
+    flags      => [atom()],
+    id         => non_neg_integer(),
+    timeout    => non_neg_integer()
+}.
 
--define(NFT_MSG_NEWSET, 9).
-
--define(NFTA_SET_TABLE,      1).
--define(NFTA_SET_NAME,       2).
--define(NFTA_SET_FLAGS,      3).
--define(NFTA_SET_KEY_TYPE,   4).
--define(NFTA_SET_KEY_LEN,    5).
--define(NFTA_SET_DATA_TYPE,  7).
--define(NFTA_SET_DATA_LEN,   8).
--define(NFTA_SET_ID,        10).
--define(NFTA_SET_TIMEOUT,   11).
-
-%% Set flags
--define(NFT_SET_ANONYMOUS, 16#01).
--define(NFT_SET_CONSTANT,  16#02).
--define(NFT_SET_INTERVAL,  16#04).
--define(NFT_SET_MAP,       16#08).
--define(NFT_SET_TIMEOUT,   16#10).
--define(NFT_SET_EVAL,      16#20).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
--define(NLM_F_CREATE,  16#0400).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 
@@ -136,6 +121,128 @@ add(Family, Opts, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
     NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
     nfnl_msg:build_hdr(?NFT_MSG_NEWSET, Family, NlFlags, Seq, Attrs).
 
+-doc """
+Build a NEWSET message for a meter (dynamic set with per-element expressions).
+
+Meters are named sets with the NFT_SET_EVAL flag, used for per-key
+rate limiting (e.g., per-source-IP). The dynset expression in the rule
+adds/updates elements with attached limit expressions.
+
+Example:
+    Msg = nft_set:add_meter(1, #{
+        table => <<"fw">>,
+        name  => <<"ssh_meter">>,
+        type  => ipv4_addr,
+        id    => 2
+    }, Seq).
+""".
+-spec add_meter(0..255, set_opts(), non_neg_integer()) -> nfnl_msg:nl_msg().
+add_meter(Family, Opts, Seq) ->
+    Flags0 = maps:get(flags, Opts, []),
+    MeterFlags = lists:usort([eval | Flags0]),
+    add(Family, Opts#{flags => MeterFlags}, Seq).
+
+-doc """
+Build a NEWSET message for a verdict map.
+
+A verdict map maps keys to verdicts (accept/drop/jump/goto).
+It has the NFT_SET_MAP flag set and uses NFT_DATA_VERDICT as
+the data type.
+
+Example:
+    Msg = nft_set:add_vmap(1, #{
+        table => <<"fw">>,
+        name  => <<"port_dispatch">>,
+        type  => inet_service,
+        id    => 2
+    }, Seq).
+""".
+-spec add_vmap(0..255, set_opts(), non_neg_integer(), non_neg_integer()) ->
+    nfnl_msg:nl_msg().
+add_vmap(Family, Opts, Id, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
+    Table   = maps:get(table, Opts),
+    Name    = maps:get(name, Opts),
+    Type    = maps:get(type, Opts),
+
+    {KeyType, KeyLen} = type_info(Type),
+    FlagVal = ?NFT_SET_MAP,
+
+    Attrs = iolist_to_binary(lists:flatten([
+        nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
+        nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
+        nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
+        nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
+        nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, KeyLen),
+        nfnl_attr:encode_u32(?NFTA_SET_DATA_TYPE, ?NFT_DATA_VERDICT),
+        nfnl_attr:encode_u32(?NFTA_SET_ID, Id)
+    ])),
+
+    NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
+    nfnl_msg:build_hdr(?NFT_MSG_NEWSET, Family, NlFlags, Seq, Attrs).
+
+-doc """
+Build a NEWSET message for a concatenated set.
+
+Concatenated sets allow composite keys: e.g., ip saddr . tcp dport.
+A single O(1) lookup matches multiple fields simultaneously.
+
+Fields is a list of set types whose key lengths are summed to form
+the total key length. The NFTA_SET_DESC_CONCAT attribute describes
+each field's length for the kernel.
+
+Example:
+    Msg = nft_set:add_concat(1, #{
+        table  => <<"fw">>,
+        name   => <<"allowpairs">>,
+        fields => [ipv4_addr, inet_service],
+        id     => 2
+    }, Seq).
+""".
+-spec add_concat(0..255, concat_opts(), non_neg_integer()) -> nfnl_msg:nl_msg().
+add_concat(Family, Opts, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
+    Table   = maps:get(table, Opts),
+    Name    = maps:get(name, Opts),
+    Fields  = maps:get(fields, Opts),
+    Flags   = maps:get(flags, Opts, []),
+    Id      = maps:get(id, Opts, 1),
+    Timeout = maps:get(timeout, Opts, undefined),
+
+    %% Compute total key length and concat key type
+    FieldInfos = [type_info(F) || F <- Fields],
+    TotalKeyLen = lists:sum([Len || {_Type, Len} <- FieldInfos]),
+    %% For concat sets, key type is a hash of the field types.
+    %% The kernel uses a composite type: we concatenate the type IDs.
+    %% In practice, nftables uses a hash, but setting 0 works for named sets.
+    KeyType = concat_key_type(FieldInfos),
+
+    FlagVal = encode_flags(Flags) bor ?NFT_SET_CONCAT,
+
+    %% Build NFTA_SET_DESC_CONCAT: nested list of field length descriptors
+    ConcatFields = iolist_to_binary([
+        nfnl_attr:encode_nested(?NFTA_SET_FIELD_LEN,
+            nfnl_attr:encode_u32(?NFTA_SET_FIELD_LEN, Len))
+        || {_Type, Len} <- FieldInfos
+    ]),
+    DescAttrs = nfnl_attr:encode_nested(?NFTA_SET_DESC_CONCAT, ConcatFields),
+    SetDesc = nfnl_attr:encode_nested(?NFTA_SET_DESC, DescAttrs),
+
+    Attrs = iolist_to_binary(lists:flatten([
+        nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
+        nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
+        nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
+        nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
+        nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, TotalKeyLen),
+        nfnl_attr:encode_u32(?NFTA_SET_ID, Id),
+        SetDesc,
+        case Timeout of
+            undefined -> [];
+            Ms -> [nfnl_attr:encode_u64(?NFTA_SET_TIMEOUT, Ms)]
+        end
+    ])),
+
+    NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
+    nfnl_msg:build_hdr(?NFT_MSG_NEWSET, Family, NlFlags, Seq, Attrs).
+
 %% --- Internal ---
 
 -spec type_info(set_type()) -> {non_neg_integer(), non_neg_integer()}.
@@ -157,4 +264,17 @@ flag_val(constant, Acc)  -> Acc bor ?NFT_SET_CONSTANT;
 flag_val(interval, Acc)  -> Acc bor ?NFT_SET_INTERVAL;
 flag_val(map, Acc)       -> Acc bor ?NFT_SET_MAP;
 flag_val(timeout, Acc)   -> Acc bor ?NFT_SET_TIMEOUT;
-flag_val(eval, Acc)      -> Acc bor ?NFT_SET_EVAL.
+flag_val(eval, Acc)      -> Acc bor ?NFT_SET_EVAL;
+flag_val(concat, Acc)    -> Acc bor ?NFT_SET_CONCAT.
+
+%% Build a composite key type for concatenated sets.
+%% The kernel uses: key_type = type1 | (type2 << 8) | (type3 << 16) ...
+%% This matches libnftnl's nftnl_set_concat_hash().
+-spec concat_key_type([{non_neg_integer(), non_neg_integer()}]) -> non_neg_integer().
+concat_key_type(FieldInfos) ->
+    concat_key_type(FieldInfos, 0, 0).
+
+concat_key_type([], _Shift, Acc) ->
+    Acc;
+concat_key_type([{Type, _Len} | Rest], Shift, Acc) ->
+    concat_key_type(Rest, Shift + 8, Acc bor (Type bsl Shift)).

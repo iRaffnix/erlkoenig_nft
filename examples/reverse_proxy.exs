@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 8. Reverse Proxy / Load Balancer
+# Reverse Proxy / Load Balancer
 #
 # Public HTTP/HTTPS forwarded to internal backend pool via DNAT.
 # Connection limits to prevent abuse. Proxy itself only SSH.

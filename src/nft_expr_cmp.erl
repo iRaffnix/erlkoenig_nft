@@ -53,13 +53,6 @@ Corresponds to libnftnl src/expr/cmp.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_CMP_SREG, 1).
--define(NFTA_CMP_OP,   2).
--define(NFTA_CMP_DATA, 3).
-
--define(NFTA_DATA_VALUE, 1).
 
 %% --- Public API ---
 

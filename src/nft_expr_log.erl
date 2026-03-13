@@ -49,14 +49,7 @@ Corresponds to libnftnl src/expr/log.c.
     level   => 0..7
 }.
 
-%% --- Constants ---
-
--define(NFTA_LOG_GROUP,      1).
--define(NFTA_LOG_PREFIX,     2).
--define(NFTA_LOG_SNAPLEN,    3).
--define(NFTA_LOG_QTHRESHOLD, 4).
--define(NFTA_LOG_LEVEL,      5).
--define(NFTA_LOG_FLAGS,      6).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 

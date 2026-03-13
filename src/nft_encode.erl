@@ -40,17 +40,6 @@ Usage:
 
 -include("nft_constants.hrl").
 
-%% --- Local constants (not in nf_tables.h value enums) ---
-
--define(INET, 1).
--define(IP, 2).
--define(IP6, 10).
-
-%% Verdict nesting attributes
--define(NFTA_DATA_VERDICT, 2).
--define(NFTA_VERDICT_CODE,  1).
--define(NFTA_VERDICT_CHAIN, 2).
--define(NFTA_IMMEDIATE_DATA, 2).
 
 %% --- Public API ---
 
@@ -75,11 +64,18 @@ expr({meta, #{key := Key, dreg := DReg}}) ->
         dreg => DReg
     });
 
-%% === ct ===
+%% === ct (read: load into register) ===
 expr({ct, #{key := Key, dreg := DReg}}) ->
     nft_expr_ct_gen:encode(#{
         key => ct_key(Key),
         dreg => DReg
+    });
+
+%% === ct (write: set from register) ===
+expr({ct, #{key := Key, sreg := SReg}}) ->
+    nft_expr_ct_gen:encode(#{
+        key => ct_key(Key),
+        sreg => SReg
     });
 
 %% === cmp ===
@@ -109,6 +105,14 @@ expr({range, #{sreg := SReg, op := Op, from_data := From, to_data := To}}) ->
         to_data => nft_data_value(To)
     });
 
+%% === lookup (verdict map: dreg=0 means verdict register) ===
+expr({lookup, #{sreg := SReg, set := SetName, dreg := 0} = Opts}) ->
+    nft_expr_lookup_gen:encode(#{
+        set => SetName,
+        sreg => SReg,
+        dreg => ?NFT_REG_VERDICT,
+        set_id => maps:get(set_id, Opts, 0)
+    });
 %% === lookup (inverted) ===
 expr({lookup, #{sreg := SReg, set := SetName, flags := 1} = Opts}) ->
     nft_expr_lookup_gen:encode(#{
@@ -206,6 +210,31 @@ expr({queue, Opts}) ->
 expr({redir, Opts}) ->
     nft_expr_redir_gen:encode(Opts);
 
+%% === notrack (conntrack bypass — name only, no attributes) ===
+expr({notrack, #{}}) ->
+    nfnl_attr:encode_str(1, <<"notrack">>);  %% NFTA_EXPR_NAME = 1
+
+%% === dynset with single nested expression (meter) ===
+expr({dynset, #{exprs := [SingleExpr]} = Opts}) ->
+    %% For a single expression, use NFTA_DYNSET_EXPR (7) directly,
+    %% matching libnftnl's behavior (nftnl_expr_dynset_build).
+    EncodedExpr = expr(SingleExpr),
+    nft_expr_dynset_gen:encode(
+        maps:remove(exprs, Opts#{expr => EncodedExpr}));
+%% === dynset with multiple nested expressions ===
+expr({dynset, #{exprs := Exprs} = Opts}) ->
+    %% For multiple expressions, use NFTA_DYNSET_EXPRESSIONS (10)
+    %% with NFTA_LIST_ELEM wrapping.
+    EncodedExprs = iolist_to_binary([
+        nfnl_attr:encode_nested(1, expr(E)) || E <- Exprs
+    ]),
+    nft_expr_dynset_gen:encode(
+        maps:remove(exprs, Opts#{expressions => EncodedExprs}));
+
+%% === socket (with symbolic key translation) ===
+expr({socket, #{key := Key} = Opts}) when is_atom(Key) ->
+    nft_expr_socket_gen:encode(Opts#{key := socket_key(Key)});
+
 %% === catch-all: delegate directly to _gen module ===
 %% Any expression {ExprName, Opts} where ExprName is an atom and
 %% nft_expr_<ExprName>_gen:encode/1 exists will be dispatched here.
@@ -283,9 +312,9 @@ nft_data_value(Bin) when is_binary(Bin) ->
 %% Internal: Symbolic constant translation
 %% ===================================================================
 
-family_val(inet)    -> ?INET;
-family_val(ip)      -> ?IP;
-family_val(ip6)     -> ?IP6;
+family_val(inet)    -> ?NFPROTO_INET;
+family_val(ip)      -> ?NFPROTO_IPV4;
+family_val(ip6)     -> ?NFPROTO_IPV6;
 family_val(arp)     -> 3;
 family_val(bridge)  -> 7;
 family_val(netdev)  -> 5;
@@ -334,3 +363,8 @@ limit_type(bytes) -> ?NFT_LIMIT_PKT_BYTES.
 nat_type(snat) -> 0;
 nat_type(dnat) -> 1;
 nat_type(N) when is_integer(N) -> N.
+
+socket_key(transparent) -> 0;
+socket_key(mark)        -> 1;
+socket_key(wildcard)    -> 2;
+socket_key(cgroupv2)    -> 3.

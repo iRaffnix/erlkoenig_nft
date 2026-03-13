@@ -42,22 +42,7 @@ Corresponds to libnftnl src/rule.c.
 
 -export([add/5]).
 
-%% --- Constants ---
-
--define(NFT_MSG_NEWRULE, 6).
-
-%% NFTA_RULE_* from linux/netfilter/nf_tables.h
--define(NFTA_RULE_TABLE,       1).
--define(NFTA_RULE_CHAIN,       2).
--define(NFTA_RULE_EXPRESSIONS, 4).
-
-%% NFTA_LIST_ELEM = 1 (not 0 — NFTA_LIST_UNSPEC is 0)
--define(NFTA_LIST_ELEM, 1).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
--define(NLM_F_CREATE,  16#0400).
--define(NLM_F_APPEND,  16#0800).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 

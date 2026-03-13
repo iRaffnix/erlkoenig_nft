@@ -2,7 +2,7 @@
 # Start erlkoenig_nft without Erlang distribution.
 # Used by systemd — bypasses the relx start script which requires -sname.
 
-ROOTDIR=/opt/erlkoenig_nft
+ROOTDIR="${ERLKOENIG_ROOTDIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 REL_VSN=$(cat "$ROOTDIR/releases/start_erl.data" | cut -d' ' -f2)
 ERTS_VSN=$(cat "$ROOTDIR/releases/start_erl.data" | cut -d' ' -f1)
 

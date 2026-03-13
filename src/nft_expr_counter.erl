@@ -39,10 +39,7 @@ Corresponds to libnftnl src/expr/counter.c.
 
 -export([new/0, new/2]).
 
-%% --- Constants ---
-
--define(NFTA_COUNTER_BYTES,   1).
--define(NFTA_COUNTER_PACKETS, 2).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 

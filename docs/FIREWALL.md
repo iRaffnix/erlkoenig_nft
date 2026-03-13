@@ -1,6 +1,6 @@
 # Firewall Engine
 
-How ~10,000 lines of pure Erlang replace `nft`, `iptables`, and every
+How ~12,300 lines of pure Erlang replace `nft`, `iptables`, and every
 firewall CLI tool — by speaking the kernel's own language.
 
 ## The Netlink Stack
@@ -110,7 +110,7 @@ kernel's `nft_do_chain()` semantics exactly.
 
 ## Code Generation
 
-38 of the 83 modules are generated from the kernel header
+38 of the 87 modules are generated from the kernel header
 `nf_tables.h`. An escript (`codegen/nft_gen.escript`) parses the
 enum declarations:
 
@@ -141,8 +141,10 @@ encode_attr(offset, V, Acc) -> [nfnl_attr:encode_u32(?NFTA_PAYLOAD_OFFSET, V) | 
 One module per expression type. Encode and decode. The generator
 handles the boilerplate; all semantic logic is hand-written.
 
-**Stats:** 45 hand-written modules (7,909 LOC), 38 generated (2,088 LOC).
-The codegen ratio is ~21% — enough to eliminate structural
+**Stats:** 49 hand-written modules (10,216 LOC), 38 generated (2,088 LOC).
+Kernel constants are consolidated in `include/nft_constants.hrl` — source
+modules include this header instead of defining local copies.
+The codegen ratio is ~17% — enough to eliminate structural
 boilerplate without hiding domain logic.
 
 ## Rule Builders
@@ -192,9 +194,10 @@ was made.
 2. Try rule 2. Same logic.
 3. If no rule matched → apply chain's default policy.
 
-129 tests run through this emulator. Every rule template in
-`nft_rules` has test coverage. Rules are verified in userspace
-before they ever touch the kernel.
+356 unit tests run through this emulator and cover rule logic, IR
+construction, encoding, and VM evaluation. 48 kernel integration
+tests verify that encoded messages are accepted by the kernel.
+Rules are verified in userspace before they ever touch the kernel.
 
 ## Conntrack Monitor
 
@@ -423,7 +426,7 @@ defmodule MyFirewall do
 end
 
 MyFirewall.config()   # => Erlang term map
-MyFirewall.write!("priv/firewall.term")
+MyFirewall.write!("etc/firewall.term")
 ```
 
 The DSL is purely compile-time. `config/0` returns a plain map,
@@ -442,32 +445,32 @@ See [DSL.md](DSL.md) for the full reference.
 
 | Module | LOC | Role |
 |--------|-----|------|
-| `nfnl_socket` | ~120 | `socket:open(16, raw, 12)`, send/recv |
-| `nfnl_msg` | ~130 | nlmsghdr + nfgenmsg construction |
-| `nfnl_attr` | ~180 | TLV attribute encoding/decoding |
-| `nfnl_server` | ~250 | Supervised socket, batch transactions |
-| `nfnl_response` | ~100 | ACK/error response parsing |
+| `nfnl_socket` | ~95 | `socket:open(16, raw, 12)`, send/recv |
+| `nfnl_msg` | ~93 | nlmsghdr + nfgenmsg construction |
+| `nfnl_attr` | ~129 | TLV attribute encoding/decoding |
+| `nfnl_server` | ~220 | Supervised socket, batch transactions |
+| `nfnl_response` | ~104 | ACK/error response parsing |
 
 ### Rule Engine
 
 | Module | LOC | Role |
 |--------|-----|------|
-| `nft_expr_ir` | ~500 | Intermediate representation (50+ expr types) |
-| `nft_encode` | ~350 | IR → netlink binary |
-| `nft_rules` | ~500 | Semantic rule builders |
-| `nft_vm` | ~600 | Kernel emulator (16 registers, BREAK semantics) |
-| `nft_vm_pkt` | ~300 | Synthetic packet builder |
+| `nft_expr_ir` | ~745 | Intermediate representation (50+ expr types) |
+| `nft_encode` | ~371 | IR → netlink binary |
+| `nft_rules` | ~854 | Semantic rule builders |
+| `nft_vm` | ~638 | Kernel emulator (16 registers, BREAK semantics) |
+| `nft_vm_pkt` | ~303 | Synthetic packet builder |
 | `nft_expr_*_gen` | 2,088 | 38 generated attribute encoders |
 
 ### Monitoring
 
 | Module | LOC | Role |
 |--------|-----|------|
-| `erlkoenig_nft_firewall` | ~550 | Config lifecycle, ban/unban, reload |
-| `erlkoenig_nft_ct` | ~500 | Conntrack multicast, dual-mode tracking |
-| `erlkoenig_nft_ct_guard` | ~400 | Flood/scan detection, auto-ban |
-| `erlkoenig_nft_counter` | ~200 | Per-counter polling + rate calculation |
-| `erlkoenig_nft_nflog` | ~200 | NFLOG packet parsing |
+| `erlkoenig_nft_firewall` | ~652 | Config lifecycle, ban/unban, reload |
+| `erlkoenig_nft_ct` | ~570 | Conntrack multicast, dual-mode tracking |
+| `erlkoenig_nft_ct_guard` | ~463 | Flood/scan detection, auto-ban |
+| `erlkoenig_nft_counter` | ~215 | Per-counter polling + rate calculation |
+| `erlkoenig_nft_nflog` | ~219 | NFLOG packet parsing |
 
 ### Object Operations
 

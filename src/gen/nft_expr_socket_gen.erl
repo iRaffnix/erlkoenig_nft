@@ -44,7 +44,7 @@ decode(AttrList) when is_list(AttrList) ->
 
 %% --- Attribute decoders ---
 
-decode_attr({?NFTA_SOCKET_KEY, V}, Acc) -> Acc#{key => V};
-decode_attr({?NFTA_SOCKET_DREG, V}, Acc) -> Acc#{dreg => V};
-decode_attr({?NFTA_SOCKET_LEVEL, V}, Acc) -> Acc#{level => V};
+decode_attr({?NFTA_SOCKET_KEY, <<V:32/big>>}, Acc) -> Acc#{key => V};
+decode_attr({?NFTA_SOCKET_DREG, <<V:32/big>>}, Acc) -> Acc#{dreg => V};
+decode_attr({?NFTA_SOCKET_LEVEL, <<V:32/big>>}, Acc) -> Acc#{level => V};
 decode_attr(_, Acc) -> Acc.

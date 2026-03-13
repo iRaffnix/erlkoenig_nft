@@ -20,8 +20,7 @@ Shared configuration utilities.
 
 Locates the firewall.term config file using the search order:
   1. $ERLKOENIG_CONFIG_DIR/firewall.term (default: /etc/erlkoenig_nft)
-  2. code:priv_dir(erlkoenig_nft)/firewall.term
-  3. priv/firewall.term (development fallback)
+  2. etc/firewall.term (development fallback)
 """.
 
 -export([config_path/0]).
@@ -34,21 +33,9 @@ config_path() ->
         true ->
             {ok, EtcPath};
         false ->
-            case code:priv_dir(erlkoenig_nft) of
-                {error, _} ->
-                    case filelib:is_regular("priv/firewall.term") of
-                        true  -> {ok, "priv/firewall.term"};
-                        false -> {error, not_found}
-                    end;
-                PrivDir ->
-                    Path = filename:join(PrivDir, "firewall.term"),
-                    case filelib:is_regular(Path) of
-                        true  -> {ok, Path};
-                        false ->
-                            case filelib:is_regular("priv/firewall.term") of
-                                true  -> {ok, "priv/firewall.term"};
-                                false -> {error, not_found}
-                            end
-                    end
+            %% Development fallback: etc/ in the project root
+            case filelib:is_regular("etc/firewall.term") of
+                true  -> {ok, "etc/firewall.term"};
+                false -> {error, not_found}
             end
     end.

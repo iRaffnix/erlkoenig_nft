@@ -54,7 +54,7 @@ end
 
 ```elixir
 firewall name :: String.t() do
-  # sets, counters, chains
+  # sets, counters, quotas, flowtables, chains
 end
 ```
 
@@ -70,8 +70,37 @@ set name, type, timeout: milliseconds
 | Param | Type | Description |
 |-------|------|-------------|
 | `name` | `String.t()` | Set name |
-| `type` | `:ipv4_addr \| :ipv6_addr` | Element type |
+| `type` | `:ipv4_addr \| :ipv6_addr \| :inet_service` | Element type |
 | `timeout` | `integer()` | Auto-expire elements (ms) |
+
+### `concat_set`
+
+Concatenated sets allow composite keys for O(1) multi-field matching.
+
+```elixir
+concat_set "allowpairs", [:ipv4_addr, :inet_service]
+concat_set "allowpairs", [:ipv4_addr, :inet_service], timeout: 60_000
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `name` | `String.t()` | Set name |
+| `fields` | `[atom()]` | List of field types (e.g., `[:ipv4_addr, :inet_service]`) |
+| `timeout` | `integer()` | Auto-expire elements (ms) |
+
+### `vmap`
+
+Verdict maps dispatch packets to different chains based on a key (e.g., port number).
+
+```elixir
+vmap "port_dispatch", :inet_service, id: 10
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `name` | `String.t()` | Map name |
+| `type` | atom | Key type (e.g., `:inet_service` for ports) |
+| `id` | `integer()` | Set ID for batch referencing |
 
 ### `counters`
 
@@ -80,6 +109,34 @@ counters [:ssh, :http, :dropped]
 ```
 
 List of named counter atoms. Each creates a kernel counter object.
+
+### `quota`
+
+Named quota objects track byte usage in the kernel.
+
+```elixir
+quota :bandwidth, 10_000_000_000, flags: 0    # 10 GB soft quota
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `name` | atom | Quota name |
+| `bytes` | `integer()` | Byte limit |
+| `flags` | `integer()` | 0 = soft (count only), 1 = hard (enforce) |
+
+### `flowtable`
+
+Hardware flow offloading tables for accelerating established connections.
+
+```elixir
+flowtable "fastpath", hook: :ingress, priority: -100, devices: ["eth0"]
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `hook` | atom | `:ingress` |
+| `priority` | integer | Evaluation priority |
+| `devices` | `[String.t()]` | Network interfaces to offload |
 
 ### `chain`
 
@@ -140,6 +197,7 @@ Rate-limited rules expand to two kernel rules (drop excess + accept rest).
 accept_udp 53                          # basic
 accept_udp 51820, counter: :wg         # with counter
 accept_udp_range 27000, 27015          # port range
+accept_udp_if_in_set "wg_allow", 51820 # only if source IP in set
 ```
 
 ### Set Operations
@@ -149,10 +207,28 @@ drop_if_in_set "blocklist"                      # drop if source IP in set
 drop_if_in_set "blocklist", counter: :banned    # with counter
 ```
 
+### Concatenated Set Operations
+
+Match composite keys (e.g., IP + port) in a single O(1) lookup.
+
+```elixir
+accept_if_in_concat_set "allowpairs", [:ipv4_addr, :inet_service]
+drop_if_in_concat_set "denylist", [:ipv4_addr, :inet_service]
+```
+
+### Verdict Map Dispatch
+
+Dispatch packets to per-service chains based on a key field.
+
+```elixir
+dispatch :tcp, "port_dispatch"     # TCP dport -> chain via vmap
+```
+
 ### Source IP Filtering
 
 ```elixir
 accept_from "10.0.0.0/24"    # accept from source IP/subnet
+accept_from {10, 0, 1, 10}   # accept from specific IP
 drop_from "192.168.1.100"    # drop from source IP
 ```
 
@@ -163,13 +239,121 @@ connlimit_drop 10             # max 10 concurrent connections per source
 connlimit_drop 10, 5          # with offset
 ```
 
+### Conntrack Marks
+
+Set and match connection tracking marks for cross-chain state.
+
+```elixir
+mark_connection 42             # set ct mark on matching packets
+match_mark 42, verdict: :accept  # match packets with ct mark
+```
+
+### FIB Reverse Path Filter
+
+Kernel FIB lookup to detect spoofed source addresses. Drops packets
+whose source address has no valid return path through the incoming
+interface.
+
+```elixir
+rpf_check                      # FIB saddr + iif -> drop if no route
+```
+
+### SYN Proxy
+
+Kernel-level SYN cookie protection. The kernel handles the TCP handshake
+and only forwards completed connections, protecting backend services
+from SYN floods.
+
+```elixir
+synproxy [80, 443], mss: 1460, wscale: 7
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `mss` | integer | Maximum segment size |
+| `wscale` | integer | Window scale factor |
+
+### Notrack
+
+Bypass connection tracking for high-throughput stateless services (e.g., DNS).
+
+```elixir
+notrack 53, :udp               # skip conntrack for UDP port 53
+notrack 53, :tcp               # skip conntrack for TCP port 53
+```
+
+### Rate Metering
+
+Per-source-IP rate limiting using kernel meters (dynamic sets with
+attached limit expressions). More granular than global `limit` — each
+source IP gets its own rate counter.
+
+```elixir
+meter_limit "ssh_meter", 22, :tcp, rate: 10, burst: 3, unit: :minute
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `name` | `String.t()` | Meter set name |
+| `port` | integer | Destination port |
+| `proto` | `:tcp \| :udp` | Protocol |
+| `rate` | integer | Max packets per unit |
+| `burst` | integer | Burst tolerance |
+| `unit` | atom | `:second`, `:minute`, `:hour`, `:day` |
+
+### NFQUEUE
+
+Send matching packets to a userspace queue for inspection (e.g., IDS/IPS).
+
+```elixir
+queue_to 443, :tcp, queue: 0, fanout: true
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `queue` | integer | Queue number |
+| `fanout` | boolean | Distribute across CPU cores |
+
+### OS Fingerprinting
+
+Match packets by the operating system detected via TCP SYN fingerprint
+(uses the kernel `nft_osf` module).
+
+```elixir
+match_os "Linux", :accept
+match_os "Windows", :drop
+```
+
+### Cgroup Matching
+
+Filter traffic by cgroup ID — useful for container and systemd service
+isolation.
+
+```elixir
+match_cgroup 1234, :accept     # accept from cgroup ID 1234
+match_cgroup 5678, :drop       # drop from cgroup ID 5678
+```
+
+### Flow Offloading
+
+Offload established connections to a flowtable for hardware-accelerated
+forwarding (requires a `flowtable` definition in the firewall block).
+
+```elixir
+offload "fastpath"             # offload to named flowtable
+```
+
 ### Logging
 
 ```elixir
-log_and_drop "PREFIX: "                       # syslog + drop
-log_and_drop "PREFIX: ", counter: :dropped    # syslog + counter + drop
-log_and_reject "PREFIX: "                     # syslog + ICMP unreachable
+log_and_drop "PREFIX: "                                 # syslog + drop
+log_and_drop "PREFIX: ", counter: :dropped              # syslog + counter + drop
+log_and_reject "PREFIX: "                               # syslog + ICMP unreachable
+log_and_drop_nflog "PREFIX: ", group: 1, counter: :dropped  # NFLOG + counter + drop
 ```
+
+`log_and_drop_nflog` sends to an NFLOG group where `erlkoenig_nft_nflog`
+can process packets in Erlang — no syslog, no file I/O.
 
 ### Accept All
 

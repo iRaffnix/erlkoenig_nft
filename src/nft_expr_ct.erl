@@ -65,10 +65,6 @@ Corresponds to libnftnl src/expr/ct.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_CT_DREG, 1).
--define(NFTA_CT_KEY,  2).
 
 %% --- Public API ---
 

@@ -71,10 +71,42 @@ wrap each rule separately:
     oifname_neq_masq/1,
     dnat_rule/2,
     tcp_dnat/3,
+    %% Per-source-IP rate limiting (meters)
+    meter_limit/4,
+    %% Cgroup matching (per-systemd-service rules)
+    cgroup_accept/1,
+    cgroup_drop/1,
+    %% Conntrack mark
+    ct_mark_set/1,
+    ct_mark_match/2,
+    %% Quota-based rules
+    quota_accept/3,
+    quota_drop/3,
+    %% OS fingerprinting
+    osf_match/2,
+    %% Packet duplication (TEE/dup)
+    dup_to/4,
     %% Set-based UDP accept (for SPA / WireGuard allowlisting)
     set_lookup_udp_accept/3,
+    %% NFQUEUE (userspace packet processing)
+    queue_rule/3,
+    queue_range_rule/3,
+    %% FIB reverse-path filtering
+    fib_rpf_drop/0,
     %% NFLOG capture + drop (for SPA packet capture)
     nflog_capture_udp/3,
+    %% SYN proxy (DDoS protection)
+    synproxy_rules/2,
+    synproxy_filter_rule/2,
+    %% Conntrack bypass
+    notrack_rule/2,
+    %% Verdict map dispatch
+    vmap_dispatch/2,
+    %% Flow offload
+    flow_offload/1,
+    %% Concatenated set lookup
+    concat_set_lookup/3,
+    concat_set_lookup_drop/2,
     %% Set element operations (return msg_funs, not terms)
     ban_ip/3,
     unban_ip/3
@@ -105,9 +137,7 @@ wrap each rule separately:
 -define(ICMP_ECHO_REQUEST, 8).
 -define(ICMPV6_ECHO_REQUEST, 128).
 
-%% Address family values
--define(NFPROTO_IPV4, 2).
--define(NFPROTO_IPV6, 10).
+-include("nft_constants.hrl").
 
 %% --- Rule Builders (return semantic terms) ---
 
@@ -367,6 +397,35 @@ connlimit_drop(Count, Flags) ->
     [nft_expr_ir:connlimit(Count, Flags),
      nft_expr_ir:drop()].
 
+-doc """
+Per-source-IP rate limit using dynamic set (meter).
+
+Creates a rule that matches a protocol/port, then uses a dynamic set
+(meter) keyed by source IP to rate-limit each source independently.
+Packets exceeding the per-IP rate are dropped.
+
+Options:
+    rate  — packets per unit (required)
+    burst — token bucket depth (default 5)
+    unit  — second | minute | hour | day (default second)
+""".
+-spec meter_limit(binary(), 0..65535, tcp | udp, map()) -> rule().
+meter_limit(SetName, Port, Proto, Opts) ->
+    Rate = maps:get(rate, Opts),
+    Burst = maps:get(burst, Opts, 5),
+    Unit = maps:get(unit, Opts, second),
+    ProtoNum = proto_num(Proto),
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+     case Proto of
+         tcp -> nft_expr_ir:tcp_dport(?REG1);
+         udp -> nft_expr_ir:udp_dport(?REG1)
+     end,
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:ip_saddr(?REG1),
+     nft_expr_ir:meter(SetName, ?REG1, Rate, Burst, Unit),
+     nft_expr_ir:drop()].
+
 -doc "Log and drop all unmatched traffic.".
 -spec log_drop(binary()) -> rule().
 log_drop(Prefix) ->
@@ -432,6 +491,75 @@ tcp_dnat(MatchPort, DstIp, DstPort)
      nft_expr_ir:dnat(?REG1, ?REG2, Family)].
 
 -doc """
+Accept traffic on port+proto while under a byte quota.
+
+Mode: until (flags=0) — quota matches while under the limit.
+The quota expression is an anonymous inline quota (not a named objref).
+""".
+-spec quota_accept(0..65535, tcp | udp, map()) -> rule().
+quota_accept(Port, Proto, #{bytes := Bytes, mode := Mode}) ->
+    Flags = quota_flags(Mode),
+    ProtoNum = proto_num(Proto),
+    DportFun = case Proto of tcp -> fun nft_expr_ir:tcp_dport/1; udp -> fun nft_expr_ir:udp_dport/1 end,
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+     DportFun(?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:quota(Bytes, Flags),
+     nft_expr_ir:accept()].
+
+-doc """
+Drop traffic on port+proto when over a byte quota.
+
+Mode: over (flags=1) — quota matches when the limit is exceeded.
+""".
+-spec quota_drop(0..65535, tcp | udp, map()) -> rule().
+quota_drop(Port, Proto, #{bytes := Bytes, mode := Mode}) ->
+    Flags = quota_flags(Mode),
+    ProtoNum = proto_num(Proto),
+    DportFun = case Proto of tcp -> fun nft_expr_ir:tcp_dport/1; udp -> fun nft_expr_ir:udp_dport/1 end,
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+     DportFun(?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:quota(Bytes, Flags),
+     nft_expr_ir:drop()].
+
+-doc """
+Duplicate (TEE) matching packets to another address via a device.
+
+Matches traffic on Port/Proto, then duplicates the packet to Addr
+via the output device with ifindex Device. The original packet
+continues through the chain — dup is a side-effect, not a terminal.
+
+Addr is a 4-byte (IPv4) or 16-byte (IPv6) binary.
+Device is the output interface index (integer).
+Port is the destination port to match.
+Proto is tcp or udp.
+
+Example:
+    %% Mirror all TCP/443 traffic to 10.0.0.2 via eth1 (ifindex 3)
+    Rule = nft_rules:dup_to(<<10,0,0,2>>, 3, 443, tcp),
+""".
+-spec dup_to(binary(), non_neg_integer(), 0..65535, tcp | udp) -> rule().
+dup_to(Addr, Device, Port, tcp) ->
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+     nft_expr_ir:tcp_dport(?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:immediate_data(?REG1, Addr),
+     nft_expr_ir:immediate_data(?REG2, <<Device:32/native>>),
+     nft_expr_ir:dup(?REG1, ?REG2)];
+dup_to(Addr, Device, Port, udp) ->
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+     nft_expr_ir:udp_dport(?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:immediate_data(?REG1, Addr),
+     nft_expr_ir:immediate_data(?REG2, <<Device:32/native>>),
+     nft_expr_ir:dup(?REG1, ?REG2)].
+
+-doc """
 Accept UDP traffic on a port if source IP is in the named set.
 
 Used for WireGuard SPA: only allow UDP 51820 if the client's IP
@@ -475,6 +603,214 @@ nflog_capture_udp(Port, Prefix, Group) ->
      nft_expr_ir:log(#{prefix => Prefix, group => Group, snaplen => 128}),
      nft_expr_ir:drop()].
 
+-doc "Skip conntrack for port/proto. Use in raw prerouting chain (priority -300).".
+-spec notrack_rule(0..65535, atom() | 0..255) -> rule().
+notrack_rule(Port, Proto) ->
+    ProtoNum = proto_num(Proto),
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+     case Proto of
+         tcp -> nft_expr_ir:tcp_dport(?REG1);
+         udp -> nft_expr_ir:udp_dport(?REG1)
+     end,
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:notrack()].
+
+%% --- SYN Proxy Rule Builders ---
+
+-doc """
+Build a complete set of synproxy rules for the given ports.
+
+Returns a 2-tuple: {NotrackRules, FilterRules}.
+- NotrackRules go into a raw prerouting chain (priority -300, policy accept)
+- FilterRules go into the input filter chain
+
+Each port gets one notrack rule and one synproxy filter rule.
+""".
+-spec synproxy_rules([0..65535], map()) -> {[rule()], [rule()]}.
+synproxy_rules(Ports, Opts) when is_list(Ports), is_map(Opts) ->
+    NotrackRules = [notrack_rule(P, tcp) || P <- Ports],
+    FilterRules = [synproxy_filter_rule(P, Opts) || P <- Ports],
+    {NotrackRules, FilterRules}.
+
+-doc """
+Build a synproxy filter rule for a single TCP port.
+
+Matches ct state invalid|untracked + TCP dport, then applies synproxy.
+Use with a corresponding notrack_rule/2 in the raw chain.
+""".
+-spec synproxy_filter_rule(0..65535, map()) -> rule().
+synproxy_filter_rule(Port, Opts) ->
+    nft_expr_ir:synproxy_filter_rule(Port, Opts).
+
+%% --- NFQUEUE Rule Builders ---
+
+-doc "Queue matching packets to userspace NFQUEUE.".
+-spec queue_rule(0..65535, tcp | udp, map()) -> rule().
+queue_rule(Port, Proto, Opts) ->
+    ProtoNum = proto_num(Proto),
+    Num = maps:get(num, Opts),
+    QueueFlags = maps:get(flags, Opts, []),
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+     case Proto of
+         tcp -> nft_expr_ir:tcp_dport(?REG1);
+         udp -> nft_expr_ir:udp_dport(?REG1)
+     end,
+     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+     nft_expr_ir:queue(Num, #{flags => QueueFlags})].
+
+-doc "Queue matching packets in a port range to userspace NFQUEUE.".
+-spec queue_range_rule({0..65535, 0..65535}, tcp | udp, map()) -> rule().
+queue_range_rule({FromPort, ToPort}, Proto, Opts) ->
+    ProtoNum = proto_num(Proto),
+    QueueNum = maps:get(num, Opts),
+    QueueFlags = maps:get(flags, Opts, []),
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+     case Proto of
+         tcp -> nft_expr_ir:tcp_dport(?REG1);
+         udp -> nft_expr_ir:udp_dport(?REG1)
+     end,
+     nft_expr_ir:range(eq, ?REG1, <<FromPort:16/big>>, <<ToPort:16/big>>),
+     nft_expr_ir:queue(QueueNum, #{flags => QueueFlags})].
+
+%% --- Cgroup Matching (per-systemd-service rules) ---
+
+-doc "Accept packets from sockets in the given cgroupv2 ID.".
+-spec cgroup_accept(non_neg_integer()) -> rule().
+cgroup_accept(CgroupId) ->
+    [nft_expr_ir:socket_cgroup(2),
+     nft_expr_ir:cmp(eq, ?REG1, <<CgroupId:64/native>>),
+     nft_expr_ir:accept()].
+
+-doc "Drop packets from sockets in the given cgroupv2 ID.".
+-spec cgroup_drop(non_neg_integer()) -> rule().
+cgroup_drop(CgroupId) ->
+    [nft_expr_ir:socket_cgroup(2),
+     nft_expr_ir:cmp(eq, ?REG1, <<CgroupId:64/native>>),
+     nft_expr_ir:drop()].
+-doc """
+Dispatch TCP traffic to chains via a verdict map.
+
+Takes a vmap set name and builds a rule that loads the TCP
+destination port into reg1 and performs a verdict map lookup.
+
+The vmap set and its elements (port -> chain verdict mappings)
+must be created separately via nft_set:add_vmap/4 and
+nft_set_elem:add_vmap_elems/5.
+
+Example:
+    Rule = nft_rules:vmap_dispatch(tcp, <<"port_dispatch">>),
+    %% Equivalent to: tcp dport vmap @port_dispatch
+""".
+-spec vmap_dispatch(tcp | udp, binary()) -> rule().
+vmap_dispatch(tcp, VmapName) ->
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+     nft_expr_ir:tcp_dport(?REG1),
+     nft_expr_ir:vmap_lookup(?REG1, VmapName)];
+vmap_dispatch(udp, VmapName) ->
+    [nft_expr_ir:meta(l4proto, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+     nft_expr_ir:udp_dport(?REG1),
+     nft_expr_ir:vmap_lookup(?REG1, VmapName)].
+-doc """
+Offload established connections to a named flowtable.
+
+Used in forward chains to fast-path established flows, bypassing
+the full nf_tables evaluation pipeline for improved throughput.
+
+Example:
+    Rule = nft_rules:flow_offload(<<"ft0">>).
+""".
+-spec flow_offload(binary()) -> rule().
+flow_offload(FlowtableName) ->
+    nft_expr_ir:flow_offload(FlowtableName).
+%% --- Conntrack Mark ---
+
+-doc """
+Set the conntrack mark on the current connection.
+
+Loads the mark value into a register and writes it to the conntrack entry.
+Use this to tag connections in one chain and match them in another.
+""".
+-spec ct_mark_set(non_neg_integer()) -> rule().
+ct_mark_set(Value) ->
+    [nft_expr_ir:immediate_data(?REG1, <<Value:32/native>>),
+     nft_expr_ir:ct_mark_set(?REG1)].
+
+-doc """
+Match packets whose conntrack mark equals Value, then apply Verdict.
+
+Loads the ct mark into a register and compares it against Value.
+Verdict is typically accept() or drop().
+""".
+-spec ct_mark_match(non_neg_integer(), nft_expr_ir:expr()) -> rule().
+ct_mark_match(Value, Verdict) ->
+    [nft_expr_ir:ct_mark(?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
+     Verdict].
+-doc """
+Drop packets that fail reverse-path filtering (BCP38 / anti-spoofing).
+
+Uses FIB lookup: if source address has no route back via the input
+interface (oif == 0), the source is spoofed and the packet is dropped.
+
+Equivalent to nftables: `fib saddr . iif oif eq 0 drop`
+""".
+-spec fib_rpf_drop() -> rule().
+fib_rpf_drop() ->
+    nft_expr_ir:fib_rpf().
+-doc """
+Match OS fingerprint and apply verdict.
+
+Uses passive TCP SYN fingerprinting to identify the OS, then
+compares with the given name (e.g. <<"Linux">>, <<"Windows">>).
+""".
+-spec osf_match(binary(), accept | drop) -> rule().
+osf_match(OsName, Verdict) ->
+    nft_expr_ir:osf_match(?REG1, OsName) ++ [verdict_expr(Verdict)].
+%% --- Concatenated Set Lookup ---
+
+-doc """
+Accept if the concatenated key matches an entry in the named set.
+
+Fields is a list of symbolic field names (ip_saddr, tcp_dport, etc.)
+that are loaded into consecutive registers and looked up as a single
+composite key.
+
+Example:
+    %% ip saddr . tcp dport { 10.0.0.1 . 22 }
+    concat_set_lookup(<<"allowpairs">>, [ip_saddr, tcp_dport], accept)
+""".
+-spec concat_set_lookup(binary(), [atom()], atom()) -> rule().
+concat_set_lookup(SetName, Fields, Verdict) ->
+    KeyExprs = [field_to_expr(F) || F <- Fields],
+    nft_expr_ir:concat_lookup(SetName, KeyExprs, Verdict).
+
+-doc """
+Drop if the concatenated key matches an entry in the named set.
+
+Example:
+    concat_set_lookup_drop(<<"denylist">>, [ip_saddr, tcp_dport])
+""".
+-spec concat_set_lookup_drop(binary(), [atom()]) -> rule().
+concat_set_lookup_drop(SetName, Fields) ->
+    concat_set_lookup(SetName, Fields, drop).
+
+%% Map symbolic field names to {IR_expression, byte_length} tuples.
+-spec field_to_expr(atom()) -> {nft_expr_ir:expr(), pos_integer()}.
+field_to_expr(ip_saddr)   -> {nft_expr_ir:ip_saddr(?REG1), 4};
+field_to_expr(ip_daddr)   -> {nft_expr_ir:ip_daddr(?REG1), 4};
+field_to_expr(ip6_saddr)  -> {nft_expr_ir:ip6_saddr(?REG1), 16};
+field_to_expr(ip6_daddr)  -> {nft_expr_ir:ip6_daddr(?REG1), 16};
+field_to_expr(tcp_sport)  -> {nft_expr_ir:tcp_sport(?REG1), 2};
+field_to_expr(tcp_dport)  -> {nft_expr_ir:tcp_dport(?REG1), 2};
+field_to_expr(udp_sport)  -> {nft_expr_ir:udp_sport(?REG1), 2};
+field_to_expr(udp_dport)  -> {nft_expr_ir:udp_dport(?REG1), 2};
+field_to_expr(ip_protocol) -> {nft_expr_ir:ip_protocol(?REG1), 1}.
+
 %% --- Set Element Operations (msg_funs, not terms) ---
 
 -doc "Add an IP address to a named set (ban).".
@@ -493,6 +829,10 @@ unban_ip(Table, SetName, IP) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
 
 %% --- Internal ---
 
+-spec verdict_expr(accept | drop) -> nft_expr_ir:expr().
+verdict_expr(accept) -> nft_expr_ir:accept();
+verdict_expr(drop) -> nft_expr_ir:drop().
+
 -spec proto_num(atom() | 0..255) -> 0..255.
 proto_num(icmp)   -> 1;
 proto_num(tcp)    -> 6;
@@ -508,3 +848,7 @@ pad_ifname(Name) when byte_size(Name) =< 16 ->
 %% NFPROTO_IPV4 = 2, NFPROTO_IPV6 = 10
 ip_family(IP) when byte_size(IP) =:= 4  -> 2;
 ip_family(IP) when byte_size(IP) =:= 16 -> 10.
+
+-spec quota_flags(until | over) -> 0 | 1.
+quota_flags(until) -> 0;
+quota_flags(over)  -> 1.

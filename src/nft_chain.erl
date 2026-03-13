@@ -66,23 +66,6 @@ Corresponds to libnftnl src/chain.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local constants ---
-
--define(NFT_MSG_NEWCHAIN, 3).
-
--define(NFTA_CHAIN_TABLE,  1).
--define(NFTA_CHAIN_NAME,   3).
--define(NFTA_CHAIN_HOOK,   4).
--define(NFTA_CHAIN_POLICY, 5).
--define(NFTA_CHAIN_TYPE,   7).
-
--define(NFTA_HOOK_HOOKNUM,  1).
--define(NFTA_HOOK_PRIORITY, 2).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
--define(NLM_F_CREATE,  16#0400).
-
 %% --- Public API ---
 
 -doc """

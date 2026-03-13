@@ -24,19 +24,12 @@ copy mode. Used by erlkoenig_nft_nflog.
 
 -export([open/2, open/1]).
 
+-include("nft_constants.hrl").
+
 %% --- Constants ---
 
 -define(AF_NETLINK, 16).
 -define(NETLINK_NETFILTER, 12).
--define(NFNL_SUBSYS_ULOG, 4).
--define(NFULNL_MSG_CONFIG, 1).
--define(NFULNL_CFG_CMD_BIND, 1).
--define(NFULNL_CFG_CMD_PF_BIND, 3).
--define(NFULA_CFG_CMD, 1).
--define(NFULA_CFG_MODE, 2).
--define(NFULNL_COPY_PACKET, 16#02).
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK, 16#0004).
 -define(RECV_TIMEOUT, 1000).
 
 %% --- Public API ---

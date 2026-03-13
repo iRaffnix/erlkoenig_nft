@@ -4,7 +4,7 @@
 
 -compile(export_all).
 
--define(NFPROTO_INET, 1).
+-include_lib("erlkoenig_nft/include/nft_constants.hrl").
 -define(TABLE, <<"erltest_chn">>).
 -define(CHAIN, <<"input">>).
 

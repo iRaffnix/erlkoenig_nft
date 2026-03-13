@@ -24,8 +24,12 @@ defmodule ErlkoenigNft.Firewall.Builder do
 
   # --- Constructor ---
 
-  def new(name \\ "default") when is_binary(name) do
-    %{name: name, sets: [], counters: [], chains: [], rules_acc: []}
+  def new(name \\ "default", opts \\ [])
+
+  def new(name, opts) when is_binary(name) and is_list(opts) do
+    owner = Keyword.get(opts, :owner, false)
+    %{name: name, owner: owner, sets: [], vmaps: [], counters: [], quotas: [],
+      chains: [], flowtables: [], rules_acc: []}
   end
 
   # --- Sets ---
@@ -35,14 +39,73 @@ defmodule ErlkoenigNft.Firewall.Builder do
   end
 
   def add_set(state, name, type, opts) when is_binary(name) and type in [:ipv4_addr, :ipv6_addr] do
-    timeout = Keyword.fetch!(opts, :timeout)
-    update_in(state, [:sets], &(&1 ++ [{name, type, %{flags: [:timeout], timeout: timeout}}]))
+    timeout = Keyword.get(opts, :timeout)
+    elements = Keyword.get(opts, :elements)
+
+    meta =
+      %{}
+      |> then(fn m -> if timeout, do: Map.merge(m, %{flags: [:timeout], timeout: timeout}), else: m end)
+      |> then(fn m -> if elements, do: Map.put(m, :elements, elements), else: m end)
+
+    case meta do
+      m when m == %{} -> update_in(state, [:sets], &(&1 ++ [{name, type}]))
+      m -> update_in(state, [:sets], &(&1 ++ [{name, type, m}]))
+    end
   end
+
+  @doc """
+  Add a concatenated set. Fields is a list of type atoms.
+
+  Example:
+      add_concat_set(state, "allowpairs", [:ipv4_addr, :inet_service])
+  """
+  def add_concat_set(state, name, fields) when is_binary(name) and is_list(fields) do
+    update_in(state, [:sets], &(&1 ++ [{name, :concat, %{fields: fields}}]))
+  end
+
+  def add_concat_set(state, name, fields, opts) when is_binary(name) and is_list(fields) do
+    timeout = Keyword.get(opts, :timeout)
+    base = %{fields: fields}
+    meta = if timeout, do: Map.merge(base, %{flags: [:timeout], timeout: timeout}), else: base
+    update_in(state, [:sets], &(&1 ++ [{name, :concat, meta}]))
+  end
+
+  # --- Verdict Maps ---
+
+  @doc """
+  Add a verdict map with initial entries.
+
+  Entries is a list of {key, verdict} tuples where verdict is
+  :accept, :drop, {:jump, chain}, or {:goto, chain}.
+
+  In the DSL, keyword syntax is used: {80, jump: "http_chain"}
+  """
+  def add_vmap(state, name, type, opts) when is_binary(name) and is_list(opts) do
+    entries = Keyword.fetch!(opts, :entries)
+    normalized = Enum.map(entries, &normalize_vmap_entry/1)
+    vmap = %{name: name, type: type, entries: normalized}
+    update_in(state, [:vmaps], &(&1 ++ [vmap]))
+  end
+
+  defp normalize_vmap_entry({key, [jump: chain]}), do: {key, {:jump, chain}}
+  defp normalize_vmap_entry({key, [goto: chain]}), do: {key, {:goto, chain}}
+  defp normalize_vmap_entry({key, :accept}), do: {key, :accept}
+  defp normalize_vmap_entry({key, :drop}), do: {key, :drop}
+  defp normalize_vmap_entry({key, verdict}), do: {key, verdict}
 
   # --- Counters ---
 
   def add_counters(state, names) when is_list(names) do
     %{state | counters: state.counters ++ Enum.map(names, &to_string/1)}
+  end
+
+  # --- Quotas ---
+
+  def add_quota(state, name, bytes, opts \\ []) when is_binary(name) and is_integer(bytes) do
+    mode = Keyword.get(opts, :mode, :until)
+    flags = if mode == :over, do: 1, else: 0
+    quota = %{name: name, bytes: bytes, flags: flags}
+    update_in(state, [:quotas], &(&1 ++ [quota]))
   end
 
   # --- Chains ---
@@ -115,11 +178,65 @@ defmodule ErlkoenigNft.Firewall.Builder do
 
   def log_reject(prefix), do: {:log_reject, prefix}
 
+  def fib_rpf_drop, do: :fib_rpf_drop
+
+  def synproxy_filter(port, opts) when is_integer(port) and is_list(opts) do
+    mss = Keyword.get(opts, :mss, 1460)
+    wscale = Keyword.get(opts, :wscale, 7)
+    ts = if Keyword.get(opts, :timestamp, false), do: 1, else: 0
+    sack = if Keyword.get(opts, :sack_perm, false), do: 2, else: 0
+    {:synproxy, port, mss, wscale, Bitwise.bor(ts, sack)}
+  end
+
   def nflog_capture_udp(port, prefix, group), do: {:nflog_capture_udp, port, prefix, group}
   def set_lookup_udp_accept(set_name, port), do: {:set_lookup_udp_accept, set_name, port}
   def log_drop_nflog(prefix, group, counter), do: {:log_drop_nflog, prefix, group, to_string(counter)}
 
+  def notrack_rule(port, proto), do: {:notrack, port, proto}
+
+  def meter_limit(name, port, proto, opts) when is_binary(name) and is_integer(port) do
+    {:meter_limit, name, port, proto, opts}
+  end
+
+  def queue_rule(port, proto, opts), do: {:queue_rule, port, proto, opts}
+
+  def cgroup_accept(cgroup_id), do: {:cgroup_accept, cgroup_id}
+  def cgroup_drop(cgroup_id), do: {:cgroup_drop, cgroup_id}
+  def ct_mark_set(value) when is_integer(value), do: {:ct_mark_set, value}
+  def ct_mark_match(value, verdict) when is_integer(value), do: {:ct_mark_match, value, verdict}
+  def osf_match(os_name, verdict), do: {:osf_match, os_name, verdict}
+
   def dnat(ip, port), do: {:dnat, ip, port}
+
+  def vmap_dispatch(proto, vmap_name) when proto in [:tcp, :udp] and is_binary(vmap_name) do
+    {:vmap_dispatch, proto, vmap_name}
+  end
+
+  # --- Flowtables ---
+
+  def add_flowtable(state, name, opts) when is_binary(name) and is_list(opts) do
+    ft = %{
+      name: name,
+      hook: Keyword.get(opts, :hook, :ingress),
+      priority: Keyword.get(opts, :priority, 0),
+      devices: Keyword.get(opts, :devices, []),
+      flags: Keyword.get(opts, :flags, 0)
+    }
+
+    update_in(state, [:flowtables], &(&1 ++ [ft]))
+  end
+
+  def flow_offload(flowtable_name) when is_binary(flowtable_name) do
+    {:flow_offload, flowtable_name}
+  end
+  def concat_set_lookup(set_name, fields, verdict),
+    do: {:concat_set_lookup, set_name, fields, verdict}
+
+  def accept_if_in_concat_set(set_name, fields),
+    do: {:concat_set_lookup, set_name, fields, :accept}
+
+  def drop_if_in_concat_set(set_name, fields),
+    do: {:concat_set_lookup, set_name, fields, :drop}
 
   # --- Rule accumulator (used by chain macro) ---
 
@@ -139,8 +256,12 @@ defmodule ErlkoenigNft.Firewall.Builder do
       chains: Enum.map(state.chains, &chain_to_term/1)
     }
 
+    base = if state.owner, do: Map.put(base, :owner, true), else: base
     base = if state.sets != [], do: Map.put(base, :sets, state.sets), else: base
+    base = if state.vmaps != [], do: Map.put(base, :vmaps, state.vmaps), else: base
     base = if state.counters != [], do: Map.put(base, :counters, state.counters), else: base
+    base = if state.flowtables != [], do: Map.put(base, :flowtables, state.flowtables), else: base
+    base = if state.quotas != [], do: Map.put(base, :quotas, state.quotas), else: base
     base
   end
 

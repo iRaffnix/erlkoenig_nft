@@ -10,15 +10,25 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
         target:
           - name: x86_64-glibc
+            runner: ubuntu-latest
             image: elixir:1.18-otp-27-slim
             deps: apt-get update && apt-get install -y git make gcc g++ curl
           - name: x86_64-musl
+            runner: ubuntu-latest
+            image: hexpm/elixir:1.18.3-erlang-27.3-alpine-3.21.3
+            deps: apk add --no-cache git make gcc g++ musl-dev curl
+          - name: aarch64-glibc
+            runner: ubuntu-24.04-arm
+            image: elixir:1.18-otp-27-slim
+            deps: apt-get update && apt-get install -y git make gcc g++ curl
+          - name: aarch64-musl
+            runner: ubuntu-24.04-arm
             image: hexpm/elixir:1.18.3-erlang-27.3-alpine-3.21.3
             deps: apk add --no-cache git make gcc g++ musl-dev curl
 

@@ -3,7 +3,7 @@
 nf_tables quota expression encoder/decoder (auto-generated).
 
 Attributes:
-%%   NFTA_QUOTA_BYTES = 1  (u16)  quota in bytes
+%%   NFTA_QUOTA_BYTES = 1  (u64)  quota in bytes
 %%   NFTA_QUOTA_FLAGS = 2  (u32)  flags
 %%   NFTA_QUOTA_CONSUMED = 4  (u64)  quota already consumed in bytes
 
@@ -30,7 +30,7 @@ name() -> <<"quota">>.
 
 %% --- Attribute encoders ---
 
-encode_attr(bytes, V) -> nfnl_attr:encode(?NFTA_QUOTA_BYTES, <<V:16/big>>);
+encode_attr(bytes, V) -> nfnl_attr:encode_u64(?NFTA_QUOTA_BYTES, V);
 encode_attr(flags, V) -> nfnl_attr:encode_u32(?NFTA_QUOTA_FLAGS, V);
 encode_attr(consumed, V) -> nfnl_attr:encode_u64(?NFTA_QUOTA_CONSUMED, V);
 encode_attr(Key, Val) ->
@@ -44,7 +44,7 @@ decode(AttrList) when is_list(AttrList) ->
 
 %% --- Attribute decoders ---
 
-decode_attr({?NFTA_QUOTA_BYTES, <<V:16/big>>}, Acc) -> Acc#{bytes => V};
+decode_attr({?NFTA_QUOTA_BYTES, <<V:64/big>>}, Acc) -> Acc#{bytes => V};
 decode_attr({?NFTA_QUOTA_FLAGS, <<V:32/big>>}, Acc) -> Acc#{flags => V};
 decode_attr({?NFTA_QUOTA_CONSUMED, <<V:64/big>>}, Acc) -> Acc#{consumed => V};
 decode_attr(_, Acc) -> Acc.

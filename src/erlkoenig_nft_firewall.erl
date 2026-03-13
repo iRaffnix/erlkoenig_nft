@@ -19,7 +19,7 @@
 Firewall configuration owner and lifecycle manager.
 
 A gen_server that reads the declarative firewall config from
-priv/firewall.term, applies it via the shared erlkoenig_nft_srv Netlink
+etc/firewall.term, applies it via the shared erlkoenig_nft_srv Netlink
 server, and starts per-counter watchers in erlkoenig_nft_watch_sup.
 
 On termination, the nf_tables table is deleted so the firewall
@@ -28,7 +28,7 @@ is cleanly removed.
 Rules are built as semantic terms (nft_expr_ir) that can be tested
 in the nft_vm simulator, then encoded to Netlink via nft_encode.
 
-The config format is documented in priv/firewall.term.
+The config format is documented in etc/firewall.term.
 
 Runtime operations (ban, unban, status) are exposed via
 gen_server calls. Use the erlkoenig_nft facade module instead of
@@ -64,13 +64,21 @@ calling this module directly.
 
 %% --- Public API ---
 
--doc "Start the firewall with config from priv/firewall.term.".
+-doc "Start the firewall with config from etc/firewall.term.".
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     case config_path() of
         {ok, Path} ->
-            {ok, [Config]} = file:consult(Path),
-            start_link(Config);
+            case file:consult(Path) of
+                {ok, [Config]} when is_map(Config) ->
+                    start_link(Config);
+                {ok, [_NotAMap]} ->
+                    {error, {bad_config, {not_a_map, Path}}};
+                {ok, _Multiple} ->
+                    {error, {bad_config, {expected_single_term, Path}}};
+                {error, Reason} ->
+                    {error, {bad_config, {Reason, Path}}}
+            end;
         {error, _} = Err ->
             Err
     end.
@@ -107,7 +115,7 @@ status() ->
     gen_server:call(?MODULE, status).
 
 -doc """
-Reload the firewall config from priv/firewall.term.
+Reload the firewall config from etc/firewall.term.
 
 Stops all counter workers, re-applies the full config (clean slate),
 and restarts counters. Existing connections are preserved (conntrack
@@ -243,7 +251,9 @@ apply_set_op(Config, IPBin, LookupFun, RuleFun, LogFmt, LogArgs) ->
 apply_config(Config) ->
     Table    = maps:get(table, Config),
     Sets     = maps:get(sets, Config, []),
+    Vmaps    = maps:get(vmaps, Config, []),
     Counters = maps:get(counters, Config, []),
+    Quotas   = maps:get(quotas, Config, []),
     Chains   = maps:get(chains, Config, []),
 
     %% Clean slate via Netlink (no os:cmd) — may fail if table doesn't exist yet
@@ -265,10 +275,24 @@ apply_config(Config) ->
         [fun(S) -> nft_object:add_counter(?INET, Table, counter_name(C), S) end
          || C <- Counters],
 
-        %% Sets
-        [fun(S) -> nft_set:add(?INET,
-            set_opts(Table, SetSpec, Idx), S) end
-         || {Idx, SetSpec} <- with_index(Sets)],
+        %% Named quotas
+        [fun(S) -> nft_quota:add(?INET, Table, quota_name(Q),
+            #{bytes => maps:get(bytes, Q), flags => maps:get(flags, Q, 0)}, S) end
+         || Q <- Quotas],
+
+        %% Sets (create + optional initial elements)
+        lists:flatten([
+            [fun(S) -> nft_set:add(?INET,
+                set_opts(Table, SetSpec, Idx), S) end |
+             build_set_elems(Table, SetSpec)]
+            || {Idx, SetSpec} <- with_index(Sets)
+        ]),
+
+        %% Verdict maps (create + entries)
+        lists:flatten([
+            build_vmap(Table, Vmap, Idx)
+            || {Idx, Vmap} <- with_index(Vmaps)
+        ]),
 
         %% Chains + Rules
         [build_chain(Table, Chain, Config) || Chain <- Chains]
@@ -435,6 +459,10 @@ build_rule(Table, Chain, forward_established, _Config) ->
 build_rule(Table, Chain, masq, _Config) ->
     encode_rule(Table, Chain, nft_rules:masq_rule());
 
+%% Verdict map dispatch
+build_rule(Table, Chain, {vmap_dispatch, Proto, VmapName}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:vmap_dispatch(Proto, ensure_binary(VmapName)));
+
 %% NAT: destination NAT to internal IP:Port
 build_rule(Table, Chain, {dnat, IP, Port}, _Config) ->
     {ok, Bin} = erlkoenig_nft_ip:normalize(IP),
@@ -471,6 +499,10 @@ build_thresholds(CounterName, Thresholds) ->
 -spec counter_name(atom() | binary()) -> binary().
 counter_name(Name) when is_binary(Name) -> Name;
 counter_name(Name) when is_atom(Name) -> atom_to_binary(Name).
+
+-spec quota_name(map()) -> binary().
+quota_name(#{name := Name}) when is_binary(Name) -> Name;
+quota_name(#{name := Name}) when is_atom(Name) -> atom_to_binary(Name).
 
 -spec with_index([T]) -> [{pos_integer(), T}].
 with_index(List) ->
@@ -515,12 +547,76 @@ set_type(_) -> undefined.
 is_allowlist(Name) ->
     binary:match(Name, <<"allow">>) =/= nomatch.
 
+%% --- Internal: Build initial set elements ---
+
+-spec build_set_elems(binary(), tuple()) -> [fun()].
+build_set_elems(Table, {SetName, SetType, #{elements := Elements}})
+  when is_list(Elements), Elements =/= [] ->
+    Keys = normalize_set_elements(Elements, SetType),
+    [fun(S) -> nft_set_elem:add_elems(?INET, Table, ensure_binary(SetName), Keys, S) end];
+build_set_elems(_Table, _SetSpec) ->
+    [].
+
+-spec normalize_set_elements([term()], atom()) -> [binary()].
+normalize_set_elements(Elements, ipv4_addr) ->
+    [begin {ok, Bin} = erlkoenig_nft_ip:normalize(E), Bin end || E <- Elements];
+normalize_set_elements(Elements, ipv6_addr) ->
+    [begin {ok, Bin} = erlkoenig_nft_ip:normalize(E), Bin end || E <- Elements];
+normalize_set_elements(Elements, inet_service) ->
+    [<<Port:16/big>> || Port <- Elements];
+normalize_set_elements(Elements, _Type) ->
+    Elements.
+
+%% --- Internal: Build verdict map ---
+
+-spec build_vmap(binary(), map(), pos_integer()) -> [fun()].
+build_vmap(Table, VmapConfig, Idx) ->
+    Name = ensure_binary(maps:get(name, VmapConfig)),
+    Type = maps:get(type, VmapConfig),
+    Entries = maps:get(entries, VmapConfig, []),
+
+    CreateMsg = fun(S) -> nft_set:add_vmap(?INET,
+        #{table => Table, name => Name, type => Type}, Idx, S) end,
+
+    case Entries of
+        [] ->
+            [CreateMsg];
+        _ ->
+            NlEntries = [normalize_vmap_entry(E, Type) || E <- Entries],
+            ElemMsg = fun(S) -> nft_set_elem:add_vmap_elems(
+                ?INET, Table, Name, NlEntries, S) end,
+            [CreateMsg, ElemMsg]
+    end.
+
+-spec normalize_vmap_entry(tuple(), atom()) -> {binary(), atom() | {atom(), binary()}}.
+normalize_vmap_entry({Key, Verdict}, inet_service) when is_integer(Key) ->
+    {<<Key:16/big>>, normalize_verdict(Verdict)};
+normalize_vmap_entry({Key, Verdict}, ipv4_addr) ->
+    {ok, Bin} = erlkoenig_nft_ip:normalize(Key),
+    {Bin, normalize_verdict(Verdict)};
+normalize_vmap_entry({Key, Verdict}, ipv6_addr) ->
+    {ok, Bin} = erlkoenig_nft_ip:normalize(Key),
+    {Bin, normalize_verdict(Verdict)};
+normalize_vmap_entry({Key, Verdict}, _Type) when is_binary(Key) ->
+    {Key, normalize_verdict(Verdict)}.
+
+-spec normalize_verdict(term()) -> atom() | {atom(), binary()}.
+normalize_verdict(accept) -> accept;
+normalize_verdict(drop) -> drop;
+normalize_verdict({jump, Chain}) -> {jump, ensure_binary(Chain)};
+normalize_verdict({goto, Chain}) -> {goto, ensure_binary(Chain)}.
+
+-spec ensure_binary(binary() | list() | atom()) -> binary().
+ensure_binary(B) when is_binary(B) -> B;
+ensure_binary(L) when is_list(L) -> list_to_binary(L);
+ensure_binary(A) when is_atom(A) -> atom_to_binary(A).
+
 -spec set_opts(binary(), tuple(), pos_integer()) -> nft_set:set_opts().
 set_opts(Table, {SetName, SetType}, Idx) ->
     #{table => Table, name => SetName, type => SetType, id => Idx};
 set_opts(Table, {SetName, SetType, Extra}, Idx) ->
     Base = #{table => Table, name => SetName, type => SetType, id => Idx},
-    maps:merge(Base, Extra).
+    maps:merge(Base, maps:without([elements], Extra)).
 
 config_path() ->
     erlkoenig_nft_config:config_path().

@@ -64,15 +64,6 @@ Corresponds to libnftnl src/expr/immediate.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_IMMEDIATE_DREG, 1).
--define(NFTA_IMMEDIATE_DATA, 2).
-
--define(NFTA_DATA_VERDICT, 2).
-
--define(NFTA_VERDICT_CODE,  1).
--define(NFTA_VERDICT_CHAIN, 2).
 
 %% --- Public API ---
 

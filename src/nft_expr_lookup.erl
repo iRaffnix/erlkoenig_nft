@@ -32,12 +32,6 @@ Corresponds to libnftnl src/expr/lookup.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_LOOKUP_SET,    1).
--define(NFTA_LOOKUP_SREG,   2).
--define(NFTA_LOOKUP_FLAGS,  5).
--define(NFTA_LOOKUP_SET_ID, 4).
 
 %% --- Public API ---
 

@@ -17,7 +17,12 @@ defmodule ErlkoenigNft.CLI do
     erlkoenig apply <file.exs>          Compile and apply to running daemon
     erlkoenig counters                  Show live counter rates
     erlkoenig guard [stats|banned]      Show ct_guard info
+
+    erlkoenig version                   Show version
+    erlkoenig completions [bash|zsh|fish]  Print shell completions
   """
+
+  @version Mix.Project.config()[:version]
 
   alias ErlkoenigNft.CLI.{Formatter, Daemon}
 
@@ -40,6 +45,11 @@ defmodule ErlkoenigNft.CLI do
       ["inspect" | rest] -> cmd_inspect(rest)
       ["diff", a, b] -> cmd_diff(a, b)
       ["list" | rest] -> cmd_list(rest)
+      ["completions", shell] -> cmd_completions(shell)
+      ["completions" | _] -> cmd_completions("bash")
+      ["version" | _] -> cmd_version()
+      ["--version" | _] -> cmd_version()
+      ["-v" | _] -> cmd_version()
       ["help" | _] -> cmd_help()
       ["--help" | _] -> cmd_help()
       ["-h" | _] -> cmd_help()
@@ -318,9 +328,24 @@ defmodule ErlkoenigNft.CLI do
     end
   end
 
+  defp cmd_version do
+    IO.puts("erlkoenig #{@version}")
+  end
+
+  defp cmd_completions(shell) do
+    case shell do
+      "bash" -> IO.puts(completions_bash())
+      "zsh" -> IO.puts(completions_zsh())
+      "fish" -> IO.puts(completions_fish())
+      _ ->
+        error("Unknown shell: #{shell}. Supported: bash, zsh, fish")
+        System.halt(1)
+    end
+  end
+
   defp cmd_help do
     IO.puts("""
-    #{color(:bold, "erlkoenig")} — nf_tables firewall DSL compiler & daemon CLI
+    #{color(:bold, "erlkoenig")} #{@version} — nf_tables firewall DSL compiler & daemon CLI
 
     #{color(:bold, "USAGE")}
       erlkoenig <command> [options]
@@ -342,6 +367,8 @@ defmodule ErlkoenigNft.CLI do
       #{color(:cyan, "inspect")} <file.exs>             Show raw Erlang term structure
       #{color(:cyan, "diff")} <a.exs> <b.exs>           Compare two firewall configs
       #{color(:cyan, "list")} [dir]                    List available example configs
+      #{color(:cyan, "version")}                       Show version
+      #{color(:cyan, "completions")} [bash|zsh|fish]    Print shell completions
 
     #{color(:bold, "EXAMPLES")}
       erlkoenig show examples/hardened_webserver.exs
@@ -350,6 +377,11 @@ defmodule ErlkoenigNft.CLI do
       erlkoenig ban 10.0.0.5
       erlkoenig counters
       erlkoenig guard banned
+
+    #{color(:bold, "SHELL COMPLETIONS")}
+      erlkoenig completions bash >> ~/.bashrc
+      erlkoenig completions zsh  >> ~/.zshrc
+      erlkoenig completions fish > ~/.config/fish/completions/erlkoenig.fish
 
     #{color(:bold, "ENVIRONMENT")}
       ERLKOENIG_SOCKET   Override daemon socket path (default: /var/run/erlkoenig.sock)
@@ -522,6 +554,147 @@ defmodule ErlkoenigNft.CLI do
         trimmed |> String.trim_leading("#") |> String.trim()
       end
     end)
+  end
+
+  # --- Shell completions ---
+
+  @commands ~w(status ban unban reload apply counters guard show compile validate inspect diff list version completions help)
+  @guard_subcommands ~w(stats banned)
+  @completions_shells ~w(bash zsh fish)
+
+  defp completions_bash do
+    """
+    _erlkoenig() {
+        local cur prev commands
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        commands="#{Enum.join(@commands, " ")}"
+
+        case "$prev" in
+            erlkoenig)
+                COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+                return 0
+                ;;
+            guard)
+                COMPREPLY=( $(compgen -W "#{Enum.join(@guard_subcommands, " ")}" -- "$cur") )
+                return 0
+                ;;
+            completions)
+                COMPREPLY=( $(compgen -W "#{Enum.join(@completions_shells, " ")}" -- "$cur") )
+                return 0
+                ;;
+            show|compile|validate|inspect|apply)
+                COMPREPLY=( $(compgen -f -X '!*.exs' -- "$cur") $(compgen -d -- "$cur") )
+                return 0
+                ;;
+            diff)
+                COMPREPLY=( $(compgen -f -X '!*.exs' -- "$cur") $(compgen -d -- "$cur") )
+                return 0
+                ;;
+            -o|--output)
+                COMPREPLY=( $(compgen -f -- "$cur") $(compgen -d -- "$cur") )
+                return 0
+                ;;
+        esac
+
+        COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    }
+    complete -F _erlkoenig erlkoenig
+    """
+  end
+
+  defp completions_zsh do
+    """
+    #compdef erlkoenig
+
+    _erlkoenig() {
+        local -a commands
+        commands=(
+            'status:Show daemon status'
+            'ban:Ban an IP address'
+            'unban:Unban an IP address'
+            'reload:Reload config from disk'
+            'apply:Compile and apply to running daemon'
+            'counters:Show live counter rates'
+            'guard:Show threat detection info'
+            'show:Render firewall as nft-style ruleset'
+            'compile:Compile DSL to .term config file'
+            'validate:Validate DSL config for errors'
+            'inspect:Show raw Erlang term structure'
+            'diff:Compare two firewall configs'
+            'list:List available example configs'
+            'version:Show version'
+            'completions:Print shell completions'
+            'help:Show usage'
+        )
+
+        if (( CURRENT == 2 )); then
+            _describe 'command' commands
+        else
+            case "${words[2]}" in
+                guard)
+                    local -a guard_sub
+                    guard_sub=('stats:Show detection statistics' 'banned:Show banned IPs')
+                    _describe 'subcommand' guard_sub
+                    ;;
+                completions)
+                    local -a shells
+                    shells=(bash zsh fish)
+                    _describe 'shell' shells
+                    ;;
+                show|compile|validate|inspect|apply)
+                    _files -g '*.exs'
+                    ;;
+                diff)
+                    _files -g '*.exs'
+                    ;;
+            esac
+        fi
+    }
+
+    _erlkoenig "$@"
+    """
+  end
+
+  defp completions_fish do
+    commands = [
+      {"status", "Show daemon status"},
+      {"ban", "Ban an IP address"},
+      {"unban", "Unban an IP address"},
+      {"reload", "Reload config from disk"},
+      {"apply", "Compile and apply to running daemon"},
+      {"counters", "Show live counter rates"},
+      {"guard", "Show threat detection info"},
+      {"show", "Render firewall as nft-style ruleset"},
+      {"compile", "Compile DSL to .term config file"},
+      {"validate", "Validate DSL config for errors"},
+      {"inspect", "Show raw Erlang term structure"},
+      {"diff", "Compare two firewall configs"},
+      {"list", "List available example configs"},
+      {"version", "Show version"},
+      {"completions", "Print shell completions"},
+      {"help", "Show usage"}
+    ]
+
+    main =
+      for {cmd, desc} <- commands do
+        "complete -c erlkoenig -n __fish_use_subcommand -a #{cmd} -d '#{desc}'"
+      end
+
+    guard = """
+    complete -c erlkoenig -n '__fish_seen_subcommand_from guard' -a 'stats banned'
+    """
+
+    completions = """
+    complete -c erlkoenig -n '__fish_seen_subcommand_from completions' -a 'bash zsh fish'
+    """
+
+    file_cmds = """
+    complete -c erlkoenig -n '__fish_seen_subcommand_from show compile validate inspect apply diff' -F -r
+    """
+
+    Enum.join(main, "\n") <> "\n" <> guard <> completions <> file_cmds
   end
 
   # --- Output helpers ---

@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 9. Docker / Container Host
+# Docker / Container Host
 #
 # Host running containers with published port ranges.
 # Bridge network traffic trusted. Container ports exposed.

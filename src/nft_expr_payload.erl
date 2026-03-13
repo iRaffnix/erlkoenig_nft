@@ -61,12 +61,6 @@ Corresponds to libnftnl src/expr/payload.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_PAYLOAD_DREG,   1).
--define(NFTA_PAYLOAD_BASE,   2).
--define(NFTA_PAYLOAD_OFFSET, 3).
--define(NFTA_PAYLOAD_LEN,    4).
 
 %% --- Public API ---
 

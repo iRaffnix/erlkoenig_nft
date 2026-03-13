@@ -45,20 +45,7 @@ that tell the kernel to process enclosed messages atomically.
 -type nl_msg() :: binary().
 %% A complete netlink message: nlmsghdr + nfgenmsg + attributes.
 
-%% --- Constants ---
-
--define(NLMSGHDR_SIZE, 16).
--define(NFGENMSG_SIZE, 4).
-
--define(NFNL_SUBSYS_NFTABLES, 10).
--define(NFNL_SUBSYS_NONE,      0).
-
--define(NFNL_MSG_BATCH_BEGIN, 16).
--define(NFNL_MSG_BATCH_END,   17).
-
--define(NLM_F_REQUEST, 16#0001).
-
--define(NFNETLINK_V0, 0).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 

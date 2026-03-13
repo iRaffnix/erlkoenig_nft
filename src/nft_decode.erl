@@ -30,11 +30,6 @@ building binary expressions, we read them back.
 
 -include("nft_constants.hrl").
 
-%% --- Local constants ---
-
--define(NFTA_EXPR_NAME, 1).
--define(NFTA_EXPR_DATA, 2).
-
 %% --- Public API ---
 
 -doc """

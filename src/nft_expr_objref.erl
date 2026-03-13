@@ -30,14 +30,10 @@ counter to persist across rule reloads.
 Corresponds to libnftnl src/expr/objref.c.
 """.
 
--export([counter/1]).
+-export([counter/1, quota/1]).
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_OBJREF_IMM_TYPE, 1).
--define(NFTA_OBJREF_IMM_NAME, 2).
 
 %% --- Public API ---
 
@@ -55,6 +51,24 @@ Example:
 counter(Name) when is_binary(Name), byte_size(Name) > 0 ->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_u32(?NFTA_OBJREF_IMM_TYPE, ?NFT_OBJECT_COUNTER),
+        nfnl_attr:encode_str(?NFTA_OBJREF_IMM_NAME, Name)
+    ]),
+    nft_expr:build(<<"objref">>, Attrs).
+
+-doc """
+Reference a named quota object.
+
+The quota must already exist in the same table. When the rule
+containing this expression matches a packet, the named quota's
+consumed byte count is updated.
+
+Example:
+    nft_expr_objref:quota(<<"bandwidth">>)
+""".
+-spec quota(binary()) -> binary().
+quota(Name) when is_binary(Name), byte_size(Name) > 0 ->
+    Attrs = iolist_to_binary([
+        nfnl_attr:encode_u32(?NFTA_OBJREF_IMM_TYPE, ?NFT_OBJECT_QUOTA),
         nfnl_attr:encode_str(?NFTA_OBJREF_IMM_NAME, Name)
     ]),
     nft_expr:build(<<"objref">>, Attrs).

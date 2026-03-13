@@ -62,16 +62,20 @@ Accepts IPv4 or IPv6 as tuple, binary, or string:
 """.
 -spec ban(inet:ip_address() | binary() | string()) -> ok | {error, term()}.
 ban(IP) ->
-    ok = erlkoenig_nft_firewall:ban(IP),
-    %% Also kill existing connections from this IP
-    _ = case erlkoenig_nft_ip:normalize(IP) of
-        {ok, Bin} ->
-            try erlkoenig_nft_ct:kill_by_src(Bin)
-            catch exit:{noproc, _} -> ok
-            end;
-        _ -> ok
-    end,
-    ok.
+    case erlkoenig_nft_firewall:ban(IP) of
+        ok ->
+            %% Also kill existing connections from this IP
+            _ = case erlkoenig_nft_ip:normalize(IP) of
+                {ok, Bin} ->
+                    try erlkoenig_nft_ct:kill_by_src(Bin)
+                    catch exit:{noproc, _} -> ok
+                    end;
+                _ -> ok
+            end,
+            ok;
+        {error, _} = Err ->
+            Err
+    end.
 
 -doc "Remove an IP address from the blocklist (IPv4 or IPv6).".
 -spec unban(inet:ip_address() | binary() | string()) -> ok | {error, term()}.
@@ -89,7 +93,7 @@ status() ->
     erlkoenig_nft_firewall:status().
 
 -doc """
-Reload firewall config from priv/firewall.term.
+Reload firewall config from etc/firewall.term.
 
 Re-applies the full config without restarting the application.
 Existing connections are preserved.

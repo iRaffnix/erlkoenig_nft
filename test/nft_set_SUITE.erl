@@ -4,7 +4,7 @@
 
 -compile(export_all).
 
--define(NFPROTO_INET, 1).
+-include_lib("erlkoenig_nft/include/nft_constants.hrl").
 -define(TABLE, <<"erltest_set">>).
 -define(CHAIN, <<"input">>).
 -define(SET, <<"banned">>).
@@ -16,6 +16,7 @@ all() ->
 groups() ->
     [{unit, [parallel], [set_add_ipv4, set_add_with_timeout, set_attrs_decodable,
                          elem_add_key, elem_add_with_timeout, elem_del_key,
+                         elem_add_batch, vmap_add_with_entries,
                          lookup_match, lookup_not_match]},
      {kernel, [], [kernel_create_set, kernel_set_with_timeout,
                    kernel_add_elem, kernel_del_elem, kernel_set_lookup_rule]}].
@@ -106,6 +107,28 @@ lookup_not_match(_) ->
     {2, nested, Inner} = lists:keyfind(2, 1, Decoded),
     %% Should have NFTA_LOOKUP_FLAGS(5) = 1 (INV)
     ?assertMatch({5, <<1:32/big>>}, lists:keyfind(5, 1, Inner)).
+
+elem_add_batch(_) ->
+    Keys = [<<10, 0, 0, 5>>, <<192, 168, 1, 100>>],
+    Msg = nft_set_elem:add_elems(1, <<"fw">>, <<"banned">>, Keys, 1),
+    %% NFT_MSG_NEWSETELEM = 12, type = (10 << 8) | 12 = 2572
+    <<_Len:32/little, 2572:16/little, _/binary>> = Msg,
+    %% Both IP addresses should be present in the message
+    ?assertNotEqual(nomatch, binary:match(Msg, <<10, 0, 0, 5>>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<192, 168, 1, 100>>)).
+
+vmap_add_with_entries(_) ->
+    Entries = [
+        {<<80:16/big>>, {jump, <<"http_chain">>}},
+        {<<443:16/big>>, {jump, <<"https_chain">>}},
+        {<<22:16/big>>, accept}
+    ],
+    Msg = nft_set_elem:add_vmap_elems(1, <<"fw">>, <<"port_dispatch">>, Entries, 1),
+    <<_Len:32/little, 2572:16/little, _/binary>> = Msg,
+    %% Port 80 (<<0, 80>>) should be present
+    ?assertNotEqual(nomatch, binary:match(Msg, <<0, 80>>)),
+    %% Chain name "http_chain" should be present
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"http_chain">>)).
 
 %% --- Kernel tests ---
 

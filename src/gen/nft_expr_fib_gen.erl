@@ -44,7 +44,7 @@ decode(AttrList) when is_list(AttrList) ->
 
 %% --- Attribute decoders ---
 
-decode_attr({?NFTA_FIB_DREG, V}, Acc) -> Acc#{dreg => V};
-decode_attr({?NFTA_FIB_RESULT, V}, Acc) -> Acc#{result => V};
-decode_attr({?NFTA_FIB_FLAGS, V}, Acc) -> Acc#{flags => V};
+decode_attr({?NFTA_FIB_DREG, <<V:32/big>>}, Acc) -> Acc#{dreg => V};
+decode_attr({?NFTA_FIB_RESULT, <<V:32/big>>}, Acc) -> Acc#{result => V};
+decode_attr({?NFTA_FIB_FLAGS, <<V:32/big>>}, Acc) -> Acc#{flags => V};
 decode_attr(_, Acc) -> Acc.

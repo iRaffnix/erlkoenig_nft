@@ -17,8 +17,7 @@
 -module(nft_expr).
 -export([build/2]).
 
--define(NFTA_EXPR_NAME, 1).
--define(NFTA_EXPR_DATA, 2).
+-include("nft_constants.hrl").
 
 -spec build(binary(), binary()) -> binary().
 build(Name, Attrs) when is_binary(Name), is_binary(Attrs) ->

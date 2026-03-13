@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 1. Hardened Web Server
+# Hardened Web Server
 #
 # Production web server: SSH + HTTP/HTTPS only.
 # Rate-limited SSH, counted services, IPv4+IPv6 blocklists,

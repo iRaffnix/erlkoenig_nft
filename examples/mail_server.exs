@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 3. Mail Server
+# Mail Server
 #
 # SMTP (25, 587), IMAPS (993), POP3S (995) with TLS.
 # Rate-limited SMTP to prevent relay abuse.

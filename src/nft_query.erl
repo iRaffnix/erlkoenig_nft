@@ -36,30 +36,7 @@ get responses contain data, not just ACK/error codes.
          get_ruleset/2,
          list_set_elems/4]).
 
-%% --- Constants ---
-
--define(NFT_MSG_GETTABLE, 1).
--define(NFT_MSG_GETCHAIN, 4).
--define(NFT_MSG_GETRULE,  7).
-
--define(NFTA_TABLE_NAME,  1).
-
--define(NFTA_CHAIN_TABLE, 1).
--define(NFTA_CHAIN_NAME,  3).
--define(NFTA_CHAIN_POLICY, 5).
--define(NFTA_CHAIN_TYPE,  7).
-
--define(NFTA_RULE_TABLE,       1).
--define(NFTA_RULE_CHAIN,       2).
--define(NFTA_RULE_HANDLE,      3).
--define(NFTA_RULE_EXPRESSIONS, 4).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_DUMP,    16#0300).
-
--define(NLMSG_DONE, 3).
-
--define(NFNL_SUBSYS_NFTABLES, 10).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 
@@ -313,15 +290,6 @@ strip_null(Bin) ->
 -spec seq() -> non_neg_integer().
 seq() ->
     erlang:system_time(second) band 16#FFFFFFFF.
-
-%% --- Set Element Query ---
-
--define(NFT_MSG_GETSETELEM, 13).
--define(NFTA_SET_ELEM_LIST_TABLE, 1).
--define(NFTA_SET_ELEM_LIST_SET, 2).
--define(NFTA_SET_ELEM_LIST_ELEMENTS, 3).
--define(NFTA_SET_ELEM_KEY, 1).
--define(NFTA_DATA_VALUE, 1).
 
 -doc """
 List all elements in a named set.

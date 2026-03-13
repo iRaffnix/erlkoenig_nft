@@ -37,24 +37,7 @@ within it. This is the simplest way to do a full cleanup.
          rule/5,
          set/4]).
 
-%% --- Constants ---
-
--define(NFT_MSG_DELTABLE, 2).
--define(NFT_MSG_DELCHAIN, 5).
--define(NFT_MSG_DELRULE,  8).
--define(NFT_MSG_DELSET,  11).
-
--define(NFTA_TABLE_NAME,  1).
--define(NFTA_CHAIN_TABLE, 1).
--define(NFTA_CHAIN_NAME,  3).
--define(NFTA_RULE_TABLE,  1).
--define(NFTA_RULE_CHAIN,  2).
--define(NFTA_RULE_HANDLE, 3).
--define(NFTA_SET_TABLE,   1).
--define(NFTA_SET_NAME,    2).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 

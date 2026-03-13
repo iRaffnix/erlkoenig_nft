@@ -211,10 +211,11 @@ ErlkoenigNft.Firewall.Profiles.get(:standard, allow_udp: [51820])
 
 ## Examples
 
-All 14 scenarios ship as Elixir DSL configs in [`examples/`](examples/):
+All 15 scenarios ship as Elixir DSL configs in [`examples/`](examples/):
 
 | Scenario | Config |
 |----------|--------|
+| **Default (installed on first run)** | [`examples/default.exs`](examples/default.exs) |
 | Hardened web server | [`examples/hardened_webserver.exs`](examples/hardened_webserver.exs) |
 | Mail server (TLS enforcement) | [`examples/mail_server.exs`](examples/mail_server.exs) |
 | Database server (private subnet) | [`examples/database_server.exs`](examples/database_server.exs) |

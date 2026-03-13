@@ -64,7 +64,7 @@ calling this module directly.
 
 %% --- Public API ---
 
--doc "Start the firewall with config from etc/firewall.term.".
+-doc "Start the firewall with config from etc/firewall.term, or a default empty table.".
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     case config_path() of
@@ -79,8 +79,9 @@ start_link() ->
                 {error, Reason} ->
                     {error, {bad_config, {Reason, Path}}}
             end;
-        {error, _} = Err ->
-            Err
+        {error, not_found} ->
+            logger:notice("[erlkoenig_nft] No config found, starting with empty table"),
+            start_link(default_config())
     end.
 
 -doc "Start the firewall with an explicit config map.".
@@ -620,6 +621,28 @@ set_opts(Table, {SetName, SetType, Extra}, Idx) ->
 
 config_path() ->
     erlkoenig_nft_config:config_path().
+
+-spec default_config() -> map().
+default_config() ->
+    #{table => <<"erlkoenig">>,
+      sets => [
+          {<<"blocklist">>, ipv4_addr},
+          {<<"blocklist6">>, ipv6_addr}
+      ],
+      counters => [input, forward, output, dropped, banned],
+      chains => [
+          #{name => <<"prerouting_ban">>, hook => prerouting, type => filter,
+            priority => -300, policy => accept, rules => [
+                {set_lookup_drop, <<"blocklist">>, banned},
+                {set_lookup_drop, <<"blocklist6">>, banned}
+          ]},
+          #{name => <<"input">>, hook => input, type => filter,
+            priority => 0, policy => accept, rules => []},
+          #{name => <<"forward">>, hook => forward, type => filter,
+            priority => 0, policy => accept, rules => []},
+          #{name => <<"output">>, hook => output, type => filter,
+            priority => 0, policy => accept, rules => []}
+      ]}.
 
 -spec collect_rates() -> #{binary() => map()}.
 collect_rates() ->

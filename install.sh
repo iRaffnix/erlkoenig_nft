@@ -143,12 +143,12 @@ fi
 # --- Default config ---
 
 if [ ! -f "$PREFIX/etc/firewall.term" ]; then
-    if [ -f "$PREFIX/bin/erlkoenig" ] && [ -f "$PREFIX/examples/hardened_webserver.exs" ]; then
+    if [ -f "$PREFIX/bin/erlkoenig" ] && [ -f "$PREFIX/examples/default.exs" ]; then
         echo "Compiling default config ..."
         "$PREFIX/bin/erlkoenig" compile \
-            "$PREFIX/examples/hardened_webserver.exs" \
+            "$PREFIX/examples/default.exs" \
             -o "$PREFIX/etc/firewall.term" 2>/dev/null && \
-            echo "Default config: $PREFIX/etc/firewall.term" || \
+            echo "Default config: $PREFIX/etc/firewall.term (accept-all with blocklists)" || \
             echo "  (skipped — compile the config manually with: erlkoenig compile)"
     fi
 fi

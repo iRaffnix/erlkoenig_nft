@@ -55,7 +55,37 @@ erlkoenig_nft:guard_stats().
 erlkoenig_nft:reload().
 ```
 
-## Quick Start
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iRaffnix/erlkoenig_nft/main/install.sh | sudo sh
+```
+
+Auto-detects architecture (x86_64/aarch64) and libc (glibc/musl), downloads
+the matching release, installs the CLI to `/usr/local/bin/erlkoenig`, sets up
+a default config, and optionally installs the systemd unit.
+
+No Erlang or Elixir install required — the release bundles its own runtime.
+
+| Archive | For |
+|---------|-----|
+| `erlkoenig_nft-v*-x86_64-glibc.tar.gz` | Standard Linux (Debian, Ubuntu, Fedora, ...) |
+| `erlkoenig_nft-v*-x86_64-musl.tar.gz` | Alpine / static linking |
+| `erlkoenig_nft-v*-aarch64-glibc.tar.gz` | ARM64 Linux (Raspberry Pi, AWS Graviton, ...) |
+
+Options: `--prefix /path` (default `/opt/erlkoenig_nft`), `--version vX.Y.Z`,
+`--no-systemd`.
+
+After install:
+
+```bash
+sudo erlkoenig_nft start        # start the daemon
+sudo erlkoenig_nft status       # check status
+sudo nft list ruleset            # verify kernel rules
+erlkoenig --help                 # CLI tool
+```
+
+## Build from Source
 
 ```bash
 make                  # build Erlang core + Elixir DSL

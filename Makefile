@@ -1,5 +1,5 @@
 .PHONY: all erl dsl test test-dsl dialyzer check clean clean-erl clean-dsl \
-       release install uninstall fetch-artifacts
+       release install uninstall fetch-artifacts tag
 
 PREFIX ?= /opt/erlkoenig_nft
 RELEASE_DIR = _build/prod/rel/erlkoenig_nft
@@ -100,6 +100,39 @@ else
 endif
 	@echo "Artifacts downloaded to $(ARTIFACT_DIR)/"
 	@ls -1 $(ARTIFACT_DIR)/*.tar.gz 2>/dev/null || echo "(no tarballs found — check run status)"
+
+## Release tagging -----------------------------------------------------
+##
+## Bump version in all files, commit, tag, and push.
+## Usage:  make tag VERSION=0.6.0
+##         make tag VERSION=0.6.0 MSG="Release notes here"
+
+CURRENT_VERSION = $(shell grep -oP '(?<=\{release, \{erlkoenig_nft, ")[^"]+' rebar.config)
+VERSION_FILES = rebar.config dsl/mix.exs install.sh
+
+tag:
+ifndef VERSION
+	$(error Usage: make tag VERSION=X.Y.Z)
+endif
+	@if ! echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo "Error: VERSION must be semver (e.g., 0.6.0)" >&2; exit 1; \
+	fi
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: working tree is dirty — commit or stash first" >&2; exit 1; \
+	fi
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
+		echo "Error: tag v$(VERSION) already exists" >&2; exit 1; \
+	fi
+	@echo "Bumping version: $(CURRENT_VERSION) -> $(VERSION)"
+	sed -i 's/{release, {erlkoenig_nft, "[^"]*"}/{release, {erlkoenig_nft, "$(VERSION)"}/' rebar.config
+	sed -i 's/version: "[^"]*"/version: "$(VERSION)"/' dsl/mix.exs
+	sed -i 's/--version v[0-9]*\.[0-9]*\.[0-9]*/--version v$(VERSION)/' install.sh
+	git add $(VERSION_FILES)
+	git commit -m "chore: bump version to $(VERSION)"
+	git tag -a "v$(VERSION)" -m "$(if $(MSG),$(MSG),v$(VERSION))"
+	@echo ""
+	@echo "Tagged v$(VERSION). Push with:"
+	@echo "  git push origin $$(git branch --show-current) v$(VERSION)"
 
 ## Clean ---------------------------------------------------------------
 

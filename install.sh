@@ -102,8 +102,19 @@ fi
 # --- Install CLI to PATH ---
 
 if [ -f "$PREFIX/bin/erlkoenig" ]; then
-    ln -sf "$PREFIX/bin/erlkoenig" /usr/local/bin/erlkoenig
-    echo "Installed CLI: /usr/local/bin/erlkoenig"
+    # The escript needs the bundled ERTS, not a system Erlang install.
+    ERTS_DIR=$(ls -d "$PREFIX"/erts-* 2>/dev/null | head -1)
+    if [ -n "$ERTS_DIR" ]; then
+        cat > /usr/local/bin/erlkoenig <<WRAPPER
+#!/bin/sh
+exec "$ERTS_DIR/bin/escript" "$PREFIX/bin/erlkoenig" "\$@"
+WRAPPER
+        chmod +x /usr/local/bin/erlkoenig
+        echo "Installed CLI: /usr/local/bin/erlkoenig (using bundled ERTS)"
+    else
+        ln -sf "$PREFIX/bin/erlkoenig" /usr/local/bin/erlkoenig
+        echo "Installed CLI: /usr/local/bin/erlkoenig (requires system Erlang)"
+    fi
 fi
 
 # --- Install systemd unit ---
@@ -114,6 +125,15 @@ if [ "$INSTALL_SYSTEMD" = true ] && [ -d /etc/systemd/system ]; then
     systemctl daemon-reload
     echo "Installed systemd unit: erlkoenig_nft.service"
     echo "  (not enabled — see README before enabling at boot)"
+fi
+
+# --- Generate cookie ---
+
+COOKIE_FILE="$PREFIX/releases/COOKIE"
+if [ ! -f "$COOKIE_FILE" ]; then
+    od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$COOKIE_FILE"
+    chmod 400 "$COOKIE_FILE"
+    echo "Generated Erlang cookie: $COOKIE_FILE"
 fi
 
 # --- Default config ---

@@ -1,8 +1,7 @@
-## Erlang distribution is disabled by default — the socket API does not need it.
-## Uncomment below if you need remote_console, ping, or RPC:
-## -sname erlkoenig_nft
-## -setcookie <run: openssl rand -base64 32>
-## -kernel inet_dist_use_interface {127,0,0,1}
-## -start_epmd false
+## Erlang distribution — required for bin/erlkoenig_nft start/stop/status.
+## Listens only on loopback. Use erlkoenig_nft_run for no-distribution mode.
+-sname erlkoenig_nft
+-kernel inet_dist_use_interface {127,0,0,1}
+-start_epmd false
 
 +sbwt very_short

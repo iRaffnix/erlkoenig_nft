@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 5. VPN Gateway / NAT Router
+# VPN Gateway / NAT Router
 #
 # WireGuard VPN gateway with NAT.
 # Routes traffic between WireGuard clients and the internet.

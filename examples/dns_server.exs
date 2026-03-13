@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 6. DNS Server
+# DNS Server
 #
 # Authoritative or recursive DNS: UDP 53 + TCP 53.
 # Rate-limited to prevent DNS amplification abuse.

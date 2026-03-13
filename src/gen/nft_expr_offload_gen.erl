@@ -18,11 +18,11 @@ Do not edit - extend via nft_expr_offload.erl instead.
 encode(Opts) when is_map(Opts) ->
     Attrs = iolist_to_binary(
         maps:fold(fun(K, V, Acc) -> [encode_attr(K, V) | Acc] end, [], Opts)),
-    nft_expr:build(<<"offload">>, Attrs).
+    nft_expr:build(<<"flow_offload">>, Attrs).
 
 -doc "Return the Netlink expression name.".
 -spec name() -> binary().
-name() -> <<"offload">>.
+name() -> <<"flow_offload">>.
 
 %% --- Attribute encoders ---
 

@@ -7,3 +7,4 @@ dsl/mix.lock
 dsl/erlkoenig
 *.beam
 erl_crash.dump
+.claude/worktrees/

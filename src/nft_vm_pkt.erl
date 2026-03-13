@@ -51,6 +51,7 @@ Example:
          icmp/2, icmp/3,
          raw/1,
          with_sets/2,
+         with_vmaps/2,
          with_limit_state/2]).
 
 %% --- Constants ---
@@ -60,6 +61,8 @@ Example:
 -define(CT_ESTABLISHED,       16#02).
 -define(CT_RELATED,           16#04).
 -define(CT_ESTABLISHED_REPLY, 16#20).
+-define(CT_INVALID,           16#01).
+-define(CT_UNTRACKED,         16#40).
 
 %% IP protocol numbers
 -define(IPPROTO_ICMP,  1).
@@ -178,6 +181,25 @@ with_sets(Pkt, SetMap) ->
     Pkt#{sets => Sets}.
 
 -doc """
+Add verdict map data to a packet for vmap lookup testing.
+
+VmapMap is a map of vmap_name => #{binary_key => verdict}.
+
+Example:
+    Pkt2 = nft_vm_pkt:with_vmaps(Pkt1, #{
+        <<"port_dispatch">> => #{
+            <<22:16/big>> => {jump, <<"ssh_chain">>},
+            <<80:16/big>> => {jump, <<"http_chain">>}
+        }
+    })
+""".
+-spec with_vmaps(nft_vm:packet(), #{binary() => #{binary() => nft_vm:verdict()}}) ->
+    nft_vm:packet().
+with_vmaps(Pkt, VmapMap) ->
+    Existing = maps:get(vmaps, Pkt, #{}),
+    Pkt#{vmaps => maps:merge(Existing, VmapMap)}.
+
+-doc """
 Set rate limit simulation state.
 
 LimitState maps limit names (or 'default') to booleans.
@@ -270,6 +292,8 @@ ct_val(new)              -> ?CT_NEW;
 ct_val(established)      -> ?CT_ESTABLISHED;
 ct_val(related)          -> ?CT_RELATED;
 ct_val(established_reply) -> ?CT_ESTABLISHED_REPLY;
+ct_val(invalid)          -> ?CT_INVALID;
+ct_val(untracked)        -> ?CT_UNTRACKED;
 ct_val(N) when is_integer(N) -> N.
 
 icmp_type(echo_request) -> 8;

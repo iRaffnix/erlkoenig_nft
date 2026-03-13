@@ -57,13 +57,6 @@ Corresponds to libnftnl src/expr/limit.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_LIMIT_RATE,  1).
--define(NFTA_LIMIT_UNIT,  2).
--define(NFTA_LIMIT_BURST, 3).
--define(NFTA_LIMIT_TYPE,  4).
--define(NFTA_LIMIT_FLAGS, 5).
 
 %% --- Public API ---
 

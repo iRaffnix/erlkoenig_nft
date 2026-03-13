@@ -64,7 +64,9 @@ Usage:
 
 -doc "VM verdict. Mirrors the kernel's NFT_BREAK, NF_ACCEPT, NF_DROP, NFT_JUMP, NFT_GOTO, NFT_RETURN.".
 -type verdict() :: accept | drop | continue | break
-                 | {jump, binary()} | {goto, binary()} | return.
+                 | {jump, binary()} | {goto, binary()} | return
+                 | {queue, non_neg_integer(), map()}
+                 | {synproxy, map()}.
 
 -doc "VM register file. Contains a verdict and a map of data register contents.".
 -type regs() :: #{
@@ -91,10 +93,20 @@ Usage:
     ct_state   => non_neg_integer(),
     ct_mark    => non_neg_integer(),
     ct_status  => non_neg_integer(),
+    %% Socket attributes
+    socket_cgroup => non_neg_integer(),
     %% Sets (lookup expression checks these)
     sets       => #{binary() => sets:set(binary())},
+    %% Verdict maps (vmap lookup checks these)
+    vmaps      => #{binary() => #{binary() => verdict()}},
+    %% OS fingerprint name (osf expression reads this)
+    osf_name   => binary(),
     %% Limit state (injected by with_limit_state/2 for rate limiting)
-    limit_state => map()
+    limit_state => map(),
+    %% Quota state (injected by with_quota_state/2 for quota testing)
+    quota_state => map(),
+    %% FIB result (injected for reverse-path filtering simulation)
+    fib_result => non_neg_integer()
 }.
 
 -doc "A single VM instruction: {type, Options}.".
@@ -189,6 +201,11 @@ eval_expr({meta, #{key := Key, dreg := DReg}}, Pkt, Regs) ->
     end,
     {ok, reg_store(DReg, Val, Regs)};
 
+%% --- socket: load socket attributes ---
+eval_expr({socket, #{key := cgroupv2, dreg := DReg}}, Pkt, Regs) ->
+    Val = maps:get(socket_cgroup, Pkt, 0),
+    {ok, reg_store(DReg, <<Val:64/native>>, Regs)};
+
 %% --- ct: load conntrack state ---
 eval_expr({ct, #{key := Key, dreg := DReg}}, Pkt, Regs) ->
     Val = case Key of
@@ -198,6 +215,22 @@ eval_expr({ct, #{key := Key, dreg := DReg}}, Pkt, Regs) ->
         _ -> <<0:32>>
     end,
     {ok, reg_store(DReg, Val, Regs)};
+
+%% --- ct: set conntrack state from register ---
+%% In the kernel this writes to the conntrack entry. In the simulator
+%% it is a no-op (the register value is consumed but the packet map
+%% is immutable during rule evaluation). Tests for ct mark matching
+%% set ct_mark directly in the packet metadata.
+eval_expr({ct, #{key := _Key, sreg := _SReg}}, _Pkt, Regs) ->
+    {ok, Regs};
+%% --- fib: FIB lookup (reads fib_result from packet meta) ---
+eval_expr({fib, #{dreg := DReg}}, Pkt, Regs) ->
+    Val = maps:get(fib_result, Pkt, 0),
+    {ok, reg_store(DReg, <<Val:32/native>>, Regs)};
+%% --- osf: passive OS fingerprinting ---
+eval_expr({osf, #{dreg := DReg}}, Pkt, Regs) ->
+    OsName = maps:get(osf_name, Pkt, <<>>),
+    {ok, reg_store(DReg, OsName, Regs)};
 
 %% ===================================================================
 %% CONSUMERS — test register values
@@ -237,7 +270,36 @@ eval_expr({bitwise, #{sreg := SReg, dreg := DReg, mask := Mask, xor_val := Xor}}
     Result = bin_xor(Masked, Xor),
     {ok, reg_store(DReg, Result, Regs)};
 
+%% --- lookup: verdict map (dreg=0 means verdict register) ---
+eval_expr({lookup, #{sreg := SReg, set := SetName, dreg := 0}}, Pkt, Regs) ->
+    Val = reg_load(SReg, Regs),
+    Vmaps = maps:get(vmaps, Pkt, #{}),
+    Vmap = maps:get(SetName, Vmaps, #{}),
+    case maps:find(Val, Vmap) of
+        {ok, Verdict} ->
+            {{verdict, Verdict}, Regs#{verdict := Verdict}};
+        error ->
+            {break, Regs}
+    end;
+
 %% --- lookup: check if register value is in a set ---
+%% Concatenated lookup: build key from consecutive registers
+eval_expr({lookup, #{sreg := SReg, set := SetName, concat := true,
+                     key_len := KeyLen} = Opts}, Pkt, Regs) ->
+    Val = concat_reg_load(SReg, KeyLen, Regs),
+    Sets = maps:get(sets, Pkt, #{}),
+    Set = maps:get(SetName, Sets, sets:new()),
+    Found = sets:is_element(Val, Set),
+    Inverted = maps:get(flags, Opts, 0) band 1 =/= 0,
+    Match = case Inverted of
+        false -> Found;
+        true  -> not Found
+    end,
+    case Match of
+        true  -> {ok, Regs};
+        false -> {break, Regs}
+    end;
+%% Simple (non-concat) lookup
 eval_expr({lookup, #{sreg := SReg, set := SetName} = Opts}, Pkt, Regs) ->
     Val = reg_load(SReg, Regs),
     Sets = maps:get(sets, Pkt, #{}),
@@ -269,6 +331,14 @@ eval_expr({objref, _Opts}, _Pkt, Regs) ->
 eval_expr({log, _Opts}, _Pkt, Regs) ->
     {ok, Regs};
 
+%% --- notrack: skip conntrack (no-op in simulator, visible in trace) ---
+eval_expr({notrack, #{}}, _Pkt, Regs) ->
+    {ok, Regs};
+
+%% --- synproxy: SYN cookie proxy (terminal verdict in simulator) ---
+eval_expr({synproxy, Opts}, _Pkt, Regs) ->
+    {{verdict, {synproxy, Opts}}, Regs#{verdict := {synproxy, Opts}}};
+
 %% --- limit: token bucket rate limiter ---
 %% In the simulator, limit can be configured to match or not match.
 %% By default, the limit expression succeeds (token available).
@@ -290,6 +360,38 @@ eval_expr({limit, #{rate := _Rate} = Opts}, Pkt, Regs) ->
         false -> {ok, Regs}
     end;
 
+%% --- dynset: dynamic set operation (meter) ---
+%% When a dynset carries nested expressions (e.g., limit for meters),
+%% evaluate the nested expressions. If any nested expression BREAKs,
+%% the dynset BREAKs. A plain dynset without exprs always succeeds.
+eval_expr({dynset, #{exprs := Exprs}}, Pkt, Regs) ->
+    eval_nested_exprs(Exprs, Pkt, Regs);
+eval_expr({dynset, #{}}, _Pkt, Regs) ->
+    {ok, Regs};
+%% --- quota: byte-based threshold ---
+%% In the simulator, quota behaviour is controlled by the packet's
+%% quota_state map. Set #{QuotaName => over} to simulate exceeding
+%% the quota, or #{QuotaName => under} (default).
+%% Anonymous quotas use the key 'default'.
+%%
+%% Flags: 0 = until (match while under limit, BREAK when over)
+%%        1 = over  (match when over limit, BREAK when under)
+eval_expr({quota, #{bytes := _Bytes, flags := Flags} = Opts}, Pkt, Regs) ->
+    QuotaState = maps:get(quota_state, Pkt, #{}),
+    QuotaName = maps:get(name, Opts, default),
+    IsOver = maps:get(QuotaName, QuotaState, false),
+    %% flags=0 (until): BREAK when over the limit
+    %% flags=1 (over):  BREAK when under the limit
+    Inverted = Flags band 1 =/= 0,
+    ShouldBreak = case Inverted of
+        false -> IsOver;       %% until: BREAK when over
+        true  -> not IsOver    %% over: BREAK when under
+    end,
+    case ShouldBreak of
+        true  -> {break, Regs};
+        false -> {ok, Regs}
+    end;
+
 %% ===================================================================
 %% TERMINALS — set verdict
 %% ===================================================================
@@ -305,6 +407,30 @@ eval_expr({immediate, #{dreg := DReg, data := Data}}, _Pkt, Regs) ->
 %% --- reject: drop + send ICMP (in simulator, just drop) ---
 eval_expr({reject, _Opts}, _Pkt, Regs) ->
     {{verdict, drop}, Regs#{verdict := drop}};
+
+%% --- queue: send packet to userspace NFQUEUE ---
+eval_expr({queue, #{num := Num} = Opts}, _Pkt, Regs) ->
+    {{verdict, {queue, Num, Opts}}, Regs#{verdict := {queue, Num, Opts}}};
+
+%% ===================================================================
+%% FLOW OFFLOAD — side effect, offload to flowtable
+%% ===================================================================
+
+%% --- offload: offload flow to a named flowtable (no-op in simulator) ---
+eval_expr({offload, _Opts}, _Pkt, Regs) ->
+    {ok, Regs};
+
+%% ===================================================================
+%% SIDE-EFFECT — packet duplication (no register or flow impact)
+%% ===================================================================
+
+%% --- dup: duplicate packet to address via device (no-op in simulator) ---
+eval_expr({dup, _Opts}, _Pkt, Regs) ->
+    {ok, Regs};
+
+%% --- fwd: forward packet to device (no-op in simulator) ---
+eval_expr({fwd, _Opts}, _Pkt, Regs) ->
+    {ok, Regs};
 
 %% ===================================================================
 %% FALLBACK — unknown expression
@@ -359,6 +485,24 @@ reg_store(Reg, Val, #{data := Data} = Regs) ->
 reg_load(Reg, #{data := Data}) ->
     maps:get(Reg, Data, <<0:32>>).
 
+%% Load concatenated key from consecutive registers.
+%% Each register holds the raw field value. We read registers
+%% sequentially, trimming each to its actual data length, and
+%% concatenate the raw bytes to form the composite key.
+-spec concat_reg_load(non_neg_integer(), non_neg_integer(), regs()) -> binary().
+concat_reg_load(StartReg, TotalKeyLen, Regs) ->
+    concat_reg_collect(StartReg, TotalKeyLen, Regs, <<>>).
+
+concat_reg_collect(_Reg, 0, _Regs, Acc) ->
+    Acc;
+concat_reg_collect(Reg, Remaining, Regs, Acc) ->
+    Val = reg_load(Reg, Regs),
+    %% Each field is stored in the register at its natural size.
+    %% Take min(byte_size(Val), Remaining) bytes from this register.
+    Take = min(byte_size(Val), Remaining),
+    <<Chunk:Take/binary, _/binary>> = Val,
+    concat_reg_collect(Reg + 1, Remaining - Take, Regs, <<Acc/binary, Chunk/binary>>).
+
 %% Compare two binaries as unsigned big-endian integers
 -spec compare(binary(), binary()) -> equal | less | greater.
 compare(A, B) ->
@@ -395,6 +539,18 @@ bin_xor(A, B) ->
     list_to_binary([X bxor Y || {X, Y} <- lists:zip(
         binary_to_list(A), binary_to_list(B))]).
 
+%% --- Nested Expression Evaluation (for dynset/meter) ---
+
+-spec eval_nested_exprs([expr()], packet(), regs()) -> {ok | break | {verdict, verdict()}, regs()}.
+eval_nested_exprs([], _Pkt, Regs) ->
+    {ok, Regs};
+eval_nested_exprs([Expr | Rest], Pkt, Regs) ->
+    case eval_expr(Expr, Pkt, Regs) of
+        {ok, NewRegs}      -> eval_nested_exprs(Rest, Pkt, NewRegs);
+        {break, _} = Break -> Break;
+        {{verdict, _}, _} = Verdict -> Verdict
+    end.
+
 %% --- Chain / Rule Evaluation ---
 
 eval_rules([], _Pkt, DefaultPolicy, AllTrace) ->
@@ -409,6 +565,8 @@ eval_rules([Rule | Rest], Pkt, DefaultPolicy, AllTrace) ->
         drop     -> {drop, lists:reverse(NewTrace)};
         {jump, _Chain} -> {Verdict, lists:reverse(NewTrace)};
         {goto, _Chain} -> {Verdict, lists:reverse(NewTrace)};
+        {queue, _, _} -> {Verdict, lists:reverse(NewTrace)};
+        {synproxy, _} -> {Verdict, lists:reverse(NewTrace)};
         return   -> {return, lists:reverse(NewTrace)}
     end.
 
@@ -434,10 +592,14 @@ format_opts(meta, #{key := K, dreg := D}) ->
     io_lib:format("load ~p => reg ~p", [K, D]);
 format_opts(ct, #{key := K, dreg := D}) ->
     io_lib:format("load ~p => reg ~p", [K, D]);
+format_opts(ct, #{key := K, sreg := S}) ->
+    io_lib:format("set ~p from reg ~p", [K, S]);
 format_opts(cmp, #{sreg := S, op := Op, data := Data}) ->
     io_lib:format("~p reg ~p ~s", [Op, S, bin_to_hex(Data)]);
 format_opts(bitwise, #{sreg := S, dreg := D}) ->
     io_lib:format("reg ~p = (reg ~p & mask) ^ xor", [D, S]);
+format_opts(lookup, #{sreg := S, set := Set, concat := true, key_len := KL}) ->
+    io_lib:format("concat(~p bytes) reg ~p in set ~s", [KL, S, Set]);
 format_opts(lookup, #{sreg := S, set := Set}) ->
     io_lib:format("reg ~p in set ~s", [S, Set]);
 format_opts(immediate, #{verdict := V}) ->
@@ -450,8 +612,26 @@ format_opts(objref, _) -> "objref";
 format_opts(log, #{prefix := P}) -> io_lib:format("prefix ~s", [P]);
 format_opts(log, _) -> "log";
 format_opts(limit, #{rate := R}) -> io_lib:format("rate ~p", [R]);
+format_opts(quota, #{bytes := B, flags := F}) ->
+    Mode = case F band 1 of 0 -> "until"; 1 -> "over" end,
+    io_lib:format("~p bytes ~s", [B, Mode]);
 format_opts(reject, _) -> "=> reject";
+format_opts(queue, #{num := Num}) -> io_lib:format("=> queue ~p", [Num]);
 format_opts(range, #{sreg := S}) -> io_lib:format("reg ~p in range", [S]);
+format_opts(notrack, _) -> "notrack";
+format_opts(synproxy, #{mss := M, wscale := W}) ->
+    io_lib:format("synproxy mss=~p wscale=~p", [M, W]);
+format_opts(dynset, #{set_name := N}) -> io_lib:format("meter ~s", [N]);
+format_opts(socket, #{key := K, dreg := D}) ->
+    io_lib:format("load ~p => reg ~p", [K, D]);
+format_opts(offload, #{table_name := N}) -> io_lib:format("flow add @~s", [N]);
+format_opts(offload, _) -> "flow offload";
+format_opts(fib, #{result := R, flags := F, dreg := D}) ->
+    io_lib:format("fib result=~p flags=~p => reg ~p", [R, F, D]);
+format_opts(osf, #{dreg := D}) -> io_lib:format("osf => reg ~p", [D]);
+format_opts(dup, #{sreg_addr := A, sreg_dev := D}) ->
+    io_lib:format("dup addr=reg~p dev=reg~p", [A, D]);
+format_opts(fwd, #{sreg_dev := D}) -> io_lib:format("fwd dev=reg~p", [D]);
 format_opts(_, Opts) -> io_lib:format("~p", [Opts]).
 
 -spec bin_to_hex(binary()) -> string().

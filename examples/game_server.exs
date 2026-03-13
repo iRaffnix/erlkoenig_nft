@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 7. Game / Media Server
+# Game / Media Server
 #
 # Game server with UDP port ranges and high connection limits.
 # Voice chat (UDP), game traffic (UDP range), web admin panel (TCP range).

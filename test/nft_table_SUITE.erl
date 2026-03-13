@@ -4,7 +4,7 @@
 
 -compile(export_all).
 
--define(NFPROTO_INET, 1).
+-include_lib("erlkoenig_nft/include/nft_constants.hrl").
 -define(TABLE, <<"erltest_tbl">>).
 
 all() ->
@@ -12,9 +12,11 @@ all() ->
      {group, kernel}].
 
 groups() ->
-    [{unit, [parallel], [add_inet_table, add_ipv4_table, table_attrs_decodable]},
+    [{unit, [parallel], [add_inet_table, add_ipv4_table, table_attrs_decodable,
+                         owner_table_flag, default_table_no_owner]},
      {kernel, [], [kernel_create_inet_table, kernel_create_ipv4_table,
-                   kernel_table_idempotent]}].
+                   kernel_table_idempotent, kernel_owner_table,
+                   kernel_owner_table_removed_on_exit]}].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -57,6 +59,18 @@ table_attrs_decodable(_) ->
     Decoded = nfnl_attr:decode(Attrs),
     ?assertMatch([{1, <<"mytable", 0>>}, {2, <<0:32>>}], Decoded).
 
+owner_table_flag(_) ->
+    Msg = nft_table:add(1, <<"owned">>, #{owner => true}, 10),
+    <<_:20/binary, Attrs/binary>> = Msg,
+    Decoded = nfnl_attr:decode(Attrs),
+    ?assertMatch([{1, <<"owned", 0>>}, {2, <<2:32>>}], Decoded).
+
+default_table_no_owner(_) ->
+    Msg = nft_table:add(1, <<"plain">>, 10),
+    <<_:20/binary, Attrs/binary>> = Msg,
+    Decoded = nfnl_attr:decode(Attrs),
+    ?assertMatch([{1, <<"plain", 0>>}, {2, <<0:32>>}], Decoded).
+
 %% --- Kernel tests ---
 
 kernel_create_inet_table(_Config) ->
@@ -89,3 +103,44 @@ kernel_table_idempotent(_Config) ->
     ]),
     ?assertEqual(ok, Result),
     nfnl_server:stop(Pid).
+
+kernel_owner_table(_Config) ->
+    {ok, Pid} = nfnl_server:start_link(),
+    ok = nfnl_server:apply_msgs(Pid, [
+        fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, #{owner => true}, Seq) end
+    ]),
+    Items = nft_json("list tables"),
+    Found = lists:any(fun
+        (#{<<"table">> := #{<<"name">> := N}}) -> N =:= ?TABLE;
+        (_) -> false
+    end, Items),
+    ?assert(Found),
+    nfnl_server:stop(Pid).
+
+kernel_owner_table_removed_on_exit(_Config) ->
+    {ok, Pid} = nfnl_server:start_link(),
+    ok = nfnl_server:apply_msgs(Pid, [
+        fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, #{owner => true}, Seq) end
+    ]),
+    %% Stop nfnl_server — closes the netlink socket
+    nfnl_server:stop(Pid),
+    timer:sleep(100),
+    %% Owner table should be auto-removed by the kernel
+    Items = nft_json("list tables"),
+    Found = lists:any(fun
+        (#{<<"table">> := #{<<"name">> := N}}) -> N =:= ?TABLE;
+        (_) -> false
+    end, Items),
+    ?assertNot(Found).
+
+%% --- Helpers ---
+
+nft_json(Cmd) ->
+    case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
+        [] -> [];
+        Output ->
+            case catch json:decode(list_to_binary(Output)) of
+                #{<<"nftables">> := Items} -> Items;
+                _ -> ct:fail({nft_json_failed, Cmd, Output})
+            end
+    end.

@@ -55,21 +55,14 @@ Public API:
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export_type([ct_key/0, ct_event/0]).
 
+-include("nft_constants.hrl").
+
 %% --- Constants: Netlink ---
 
 -define(AF_NETLINK, 16).
 -define(NETLINK_NETFILTER, 12).
 
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
-
-%% Conntrack multicast groups (for nl_mgrp bitmask)
--define(NFNLGRP_CONNTRACK_NEW,     1).
--define(NFNLGRP_CONNTRACK_UPDATE,  2).
--define(NFNLGRP_CONNTRACK_DESTROY, 3).
-
 %% Subsystem + message types
--define(NFNL_SUBSYS_CTNETLINK, 1).
 -define(IPCTNL_MSG_CT_NEW,     0).
 -define(IPCTNL_MSG_CT_GET,     1).
 -define(IPCTNL_MSG_CT_DELETE,  2).

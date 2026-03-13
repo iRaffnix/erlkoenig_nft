@@ -36,15 +36,7 @@ Events are broadcast via pg group `nflog_events`:
 -export([start_link/1, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
-%% --- Constants ---
-
--define(NFNL_SUBSYS_ULOG, 4).
--define(NFULNL_MSG_PACKET, 0).
-
--define(NFULA_PACKET_HDR, 1).
--define(NFULA_PREFIX, 10).
--define(NFULA_PAYLOAD, 9).
--define(NFULA_IFINDEX_INDEV, 4).
+-include("nft_constants.hrl").
 
 -define(IPPROTO_TCP, 6).
 -define(IPPROTO_UDP, 17).

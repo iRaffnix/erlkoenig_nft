@@ -5,7 +5,7 @@
 
 -compile(export_all).
 
--define(NFPROTO_INET, 1).
+-include_lib("erlkoenig_nft/include/nft_constants.hrl").
 
 all() ->
     [{group, unit},

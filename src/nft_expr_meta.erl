@@ -49,10 +49,6 @@ Corresponds to libnftnl src/expr/meta.c.
 
 -include("nft_constants.hrl").
 
-%% --- Local attribute constants ---
-
--define(NFTA_META_DREG, 1).
--define(NFTA_META_KEY,  2).
 
 %% --- Public API ---
 

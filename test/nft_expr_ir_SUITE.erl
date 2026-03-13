@@ -50,6 +50,9 @@ all() ->
      ir_tproxy,
      ir_xfrm,
      ir_last,
+     %% ct mark helpers
+     ir_ct_mark,
+     ir_ct_mark_set,
      %% IPv6 helpers
      ir_ip6_saddr,
      ir_ip6_daddr,
@@ -270,7 +273,7 @@ ir_osf(_) ->
 
 ir_offload(_) ->
     Term = nft_expr_ir:offload(<<"ft0">>),
-    {<<"offload">>, Attrs} = encode_decode(Term),
+    {<<"flow_offload">>, Attrs} = encode_decode(Term),
     ?assertMatch({1, <<"ft0", 0>>}, lists:keyfind(1, 1, Attrs)).  %% table_name
 
 ir_secmark(_) ->
@@ -304,6 +307,22 @@ ir_last(_) ->
     Term = nft_expr_ir:last(),
     {<<"last">>, Attrs} = encode_decode(Term),
     ?assertMatch({1, <<0:32/big>>}, lists:keyfind(1, 1, Attrs)).  %% set=0
+
+%% ===================================================================
+%% ct mark helpers
+%% ===================================================================
+
+ir_ct_mark(_) ->
+    Term = nft_expr_ir:ct_mark(?REG1),
+    {<<"ct">>, Attrs} = encode_decode(Term),
+    ?assertMatch({2, <<3:32/big>>}, lists:keyfind(2, 1, Attrs)),  %% key=mark(3)
+    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)).  %% dreg=1
+
+ir_ct_mark_set(_) ->
+    Term = nft_expr_ir:ct_mark_set(?REG1),
+    {<<"ct">>, Attrs} = encode_decode(Term),
+    ?assertMatch({2, <<3:32/big>>}, lists:keyfind(2, 1, Attrs)),  %% key=mark(3)
+    ?assertMatch({4, <<1:32/big>>}, lists:keyfind(4, 1, Attrs)).  %% sreg=1
 
 %% ===================================================================
 %% IPv6 helpers
@@ -349,6 +368,8 @@ ir_no_dropped_keys(_) ->
         nft_expr_ir:payload(network, 12, 4, ?REG1),
         nft_expr_ir:meta(l4proto, ?REG1),
         nft_expr_ir:ct(state, ?REG1),
+        nft_expr_ir:ct_mark(?REG1),
+        nft_expr_ir:ct_mark_set(?REG1),
         nft_expr_ir:cmp(eq, ?REG1, <<6>>),
         nft_expr_ir:bitwise(?REG1, ?REG1, <<255,0,0,0>>, <<0,0,0,0>>),
         nft_expr_ir:range(eq, ?REG1, <<0,80>>, <<1,187>>),

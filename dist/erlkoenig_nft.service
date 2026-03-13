@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-Environment=HOME=/opt/erlkoenig_nft
-ExecStart=/opt/erlkoenig_nft/bin/erlkoenig_nft_run
+Environment=HOME=@@PREFIX@@
+ExecStart=@@PREFIX@@/bin/erlkoenig_nft_run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536

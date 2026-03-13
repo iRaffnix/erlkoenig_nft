@@ -271,12 +271,23 @@ dispatch(#{<<"cmd">> := <<"apply">>, <<"term">> := TermStr}) ->
             ok ->
                 ConfigPath = resolve_config_path(),
                 TmpPath = ConfigPath ++ ".tmp",
-                ok = file:write_file(TmpPath, TermStr),
-                ok = file:rename(TmpPath, ConfigPath),
-                case erlkoenig_nft:reload() of
-                    ok -> #{<<"ok">> => true};
-                    {error, _R} ->
-                        #{<<"ok">> => false, <<"error">> => <<"reload failed after apply">>}
+                case file:write_file(TmpPath, TermStr) of
+                    ok ->
+                        case file:rename(TmpPath, ConfigPath) of
+                            ok ->
+                                case erlkoenig_nft:reload() of
+                                    ok -> #{<<"ok">> => true};
+                                    {error, _R} ->
+                                        #{<<"ok">> => false, <<"error">> => <<"reload failed after apply">>}
+                                end;
+                            {error, RenameErr} ->
+                                _ = file:delete(TmpPath),
+                                logger:warning("API apply rename error: ~p", [RenameErr]),
+                                #{<<"ok">> => false, <<"error">> => <<"failed to write config">>}
+                        end;
+                    {error, WriteErr} ->
+                        logger:warning("API apply write error: ~p", [WriteErr]),
+                        #{<<"ok">> => false, <<"error">> => <<"failed to write config">>}
                 end;
             {error, Reason} ->
                 #{<<"ok">> => false, <<"error">> => Reason}
@@ -323,8 +334,12 @@ dispatch(_) ->
 
 resolve_config_path() ->
     case erlkoenig_nft_config:config_path() of
-        {ok, P} -> P;
-        {error, _} -> "/etc/erlkoenig_nft/firewall.term"
+        {ok, P} ->
+            P;
+        {error, _} ->
+            %% Fallback: resolve via ERLKOENIG_CONFIG_DIR or default
+            ConfigDir = os:getenv("ERLKOENIG_CONFIG_DIR", "/etc/erlkoenig_nft"),
+            filename:join(ConfigDir, "firewall.term")
     end.
 
 validate_config_term(TermStr) ->

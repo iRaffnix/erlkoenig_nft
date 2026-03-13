@@ -3,8 +3,7 @@
 The firewall is defined in a single Erlang term file. Default search order:
 
 1. `$ERLKOENIG_CONFIG_DIR/firewall.term` (default: `/etc/erlkoenig_nft`)
-2. `code:priv_dir(erlkoenig_nft)/firewall.term`
-3. `priv/firewall.term` (development fallback)
+2. `etc/firewall.term` (development fallback)
 
 The file contains a single Erlang map:
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 4. Database Server (Internal Only)
+# Database Server (Internal Only)
 #
 # PostgreSQL accessible only from known app servers.
 # No public services except SSH for management.

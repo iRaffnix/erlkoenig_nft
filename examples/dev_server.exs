@@ -1,6 +1,6 @@
 #!/usr/bin/env elixir
 #
-# 10. Development Server
+# Development Server
 #
 # Multi-service dev box: SSH, HTTP, Phoenix LiveReload, Erlang EPMD +
 # distribution, PostgreSQL, Grafana. Relaxed limits, log-and-reject

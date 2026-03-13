@@ -6,6 +6,7 @@ defmodule ErlkoenigNft.CLI.Daemon do
   """
 
   @default_socket "/var/run/erlkoenig.sock"
+  @max_response_size 1_048_576
 
   @doc "Send a command to the daemon and return the parsed response."
   def call(cmd, opts \\ %{}) do
@@ -48,6 +49,9 @@ defmodule ErlkoenigNft.CLI.Daemon do
       {pos, 1} ->
         line = :binary.part(buf, 0, pos)
         {:ok, :json.decode(line)}
+
+      :nomatch when byte_size(buf) > @max_response_size ->
+        {:error, :response_too_large}
 
       :nomatch ->
         case :socket.recv(sock, 0, 10_000) do

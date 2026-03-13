@@ -36,26 +36,11 @@ Corresponds to libnftnl src/set_elem.c.
 """.
 
 -export([add/5, add/6,
+         add_elems/5,
+         add_vmap_elems/5,
          del/5]).
 
-%% --- Constants ---
-
--define(NFT_MSG_NEWSETELEM, 12).
--define(NFT_MSG_DELSETELEM, 14).
-
--define(NFTA_SET_ELEM_LIST_TABLE,    1).
--define(NFTA_SET_ELEM_LIST_SET,      2).
--define(NFTA_SET_ELEM_LIST_ELEMENTS, 3).
-
--define(NFTA_SET_ELEM_KEY,     1).
--define(NFTA_SET_ELEM_TIMEOUT, 4).
-
--define(NFTA_LIST_ELEM, 1).
--define(NFTA_DATA_VALUE, 1).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
--define(NLM_F_CREATE,  16#0400).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 
@@ -109,6 +94,66 @@ del(Family, Table, Set, Key, Seq) ->
         nfnl_attr:encode(?NFTA_DATA_VALUE, Key)),
     build_elem_msg(?NFT_MSG_DELSETELEM, Family, Table, Set, ElemAttrs, Seq).
 
+-doc """
+Add multiple elements to a set in a single message.
+
+Keys is a list of raw binary keys matching the set's key type.
+
+Example:
+    nft_set_elem:add_elems(1, <<"fw">>, <<"banned">>,
+        [<<10, 0, 0, 5>>, <<192, 168, 1, 100>>], Seq)
+""".
+-spec add_elems(0..255, binary(), binary(), [binary()], non_neg_integer()) ->
+    nfnl_msg:nl_msg().
+add_elems(Family, Table, Set, Keys, Seq) ->
+    ElemList = iolist_to_binary([
+        nfnl_attr:encode_nested(?NFTA_LIST_ELEM,
+            nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
+                nfnl_attr:encode(?NFTA_DATA_VALUE, Key)))
+        || Key <- Keys
+    ]),
+    Attrs = iolist_to_binary([
+        nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_TABLE, Table),
+        nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_SET, Set),
+        nfnl_attr:encode_nested(?NFTA_SET_ELEM_LIST_ELEMENTS, ElemList)
+    ]),
+    NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
+    nfnl_msg:build_hdr(?NFT_MSG_NEWSETELEM, Family, NlFlags, Seq, Attrs).
+
+-doc """
+Add multiple verdict map elements to a set.
+
+Elements is a list of {Key, Verdict} tuples where Verdict is:
+    accept | drop | {jump, ChainName} | {goto, ChainName}
+
+Example:
+    nft_set_elem:add_vmap_elems(1, <<"fw">>, <<"port_dispatch">>, [
+        {<<22:16/big>>, {jump, <<"ssh_chain">>}},
+        {<<80:16/big>>, {jump, <<"http_chain">>}}
+    ], Seq)
+""".
+-spec add_vmap_elems(0..255, binary(), binary(),
+                     [{binary(), atom() | {atom(), binary()}}],
+                     non_neg_integer()) -> nfnl_msg:nl_msg().
+add_vmap_elems(Family, Table, Set, Elements, Seq) ->
+    ElemList = iolist_to_binary([
+        nfnl_attr:encode_nested(?NFTA_LIST_ELEM,
+            iolist_to_binary([
+                nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
+                    nfnl_attr:encode(?NFTA_DATA_VALUE, Key)),
+                nfnl_attr:encode_nested(?NFTA_SET_ELEM_DATA,
+                    encode_verdict_data(Verdict))
+            ]))
+        || {Key, Verdict} <- Elements
+    ]),
+    Attrs = iolist_to_binary([
+        nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_TABLE, Table),
+        nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_SET, Set),
+        nfnl_attr:encode_nested(?NFTA_SET_ELEM_LIST_ELEMENTS, ElemList)
+    ]),
+    NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
+    nfnl_msg:build_hdr(?NFT_MSG_NEWSETELEM, Family, NlFlags, Seq, Attrs).
+
 %% --- Internal ---
 
 -spec build_elem_msg(0..255, 0..255, binary(), binary(), binary(),
@@ -122,3 +167,22 @@ build_elem_msg(MsgType, Family, Table, Set, ElemAttrs, Seq) ->
     ]),
     NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
     nfnl_msg:build_hdr(MsgType, Family, NlFlags, Seq, Attrs).
+
+encode_verdict_data(accept) ->
+    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NF_ACCEPT));
+encode_verdict_data(drop) ->
+    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NF_DROP));
+encode_verdict_data({jump, Chain}) ->
+    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+        iolist_to_binary([
+            nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NFT_JUMP),
+            nfnl_attr:encode_str(?NFTA_VERDICT_CHAIN, Chain)
+        ]));
+encode_verdict_data({goto, Chain}) ->
+    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+        iolist_to_binary([
+            nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NFT_GOTO),
+            nfnl_attr:encode_str(?NFTA_VERDICT_CHAIN, Chain)
+        ])).

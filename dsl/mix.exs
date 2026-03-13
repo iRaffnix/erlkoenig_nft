@@ -4,7 +4,7 @@ defmodule ErlkoenigNft.DSL.MixProject do
   def project do
     [
       app: :erlkoenig_nft_dsl,
-      version: "0.4.0",
+      version: "0.5.0",
       elixir: "~> 1.18",
       deps: deps(),
       escript: escript()
@@ -18,7 +18,8 @@ defmodule ErlkoenigNft.DSL.MixProject do
   defp escript do
     [
       main_module: ErlkoenigNft.CLI,
-      name: "erlkoenig"
+      name: "erlkoenig",
+      embed_elixir: true
     ]
   end
 

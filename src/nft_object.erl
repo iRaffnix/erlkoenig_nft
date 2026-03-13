@@ -42,30 +42,7 @@ Usage:
          get_counter_reset/4,
          get_all_counters/3]).
 
-%% --- Constants ---
-
--define(NFT_MSG_NEWOBJ,       18).
--define(NFT_MSG_GETOBJ,       19).
--define(NFT_MSG_DELOBJ,       20).
--define(NFT_MSG_GETOBJ_RESET, 21).
-
--define(NFT_OBJECT_COUNTER, 1).
-
--define(NFTA_OBJ_TABLE,  1).
--define(NFTA_OBJ_NAME,   2).
--define(NFTA_OBJ_TYPE,   3).
--define(NFTA_OBJ_DATA,   4).
-
--define(NFTA_COUNTER_BYTES,   1).
--define(NFTA_COUNTER_PACKETS, 2).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
--define(NLM_F_CREATE,  16#0400).
--define(NLM_F_DUMP,    16#0300).
-
--define(NLMSG_DONE, 3).
--define(NFNL_SUBSYS_NFTABLES, 10).
+-include("nft_constants.hrl").
 
 %% --- Public API: Create/Delete ---
 

@@ -35,15 +35,7 @@ Corresponds to libnftnl src/expr/bitwise.c.
 
 -export([mask/4]).
 
-%% --- Constants ---
-
--define(NFTA_BITWISE_SREG, 1).
--define(NFTA_BITWISE_DREG, 2).
--define(NFTA_BITWISE_LEN,  3).
--define(NFTA_BITWISE_MASK, 4).
--define(NFTA_BITWISE_XOR,  5).
-
--define(NFTA_DATA_VALUE, 1).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 

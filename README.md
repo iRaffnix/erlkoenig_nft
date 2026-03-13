@@ -6,9 +6,9 @@ Zero external dependencies.
 
 > **Early stage software — use in a VM only.** erlkoenig_nft is under active
 > development and we are working on getting it stable. It has not been
-> battle-tested in production yet. The userspace VM tests cover rule logic
-> extensively (239 tests), but real-world kernel interaction has seen limited
-> testing.
+> battle-tested in production yet. The test suite covers rule logic
+> extensively (356 unit tests + 48 kernel integration tests), but real-world
+> production usage has seen limited testing.
 >
 > **Do not run this on a bare-metal host or outside of a virtual machine.**
 > A misconfigured firewall can lock you out of your own machine. Always test
@@ -55,246 +55,181 @@ erlkoenig_nft:guard_stats().
 erlkoenig_nft:reload().
 ```
 
-## Quick Start
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iRaffnix/erlkoenig_nft/main/install.sh | sudo sh
+```
+
+Auto-detects architecture (x86_64/aarch64) and libc (glibc/musl), downloads
+the matching release, installs the CLI to `/usr/local/bin/erlkoenig`, sets up
+a default config, and optionally installs the systemd unit.
+
+No Erlang or Elixir install required — the release bundles its own runtime.
+
+| Archive | For |
+|---------|-----|
+| `erlkoenig_nft-v*-x86_64-glibc.tar.gz` | Standard Linux (Debian, Ubuntu, Fedora, ...) |
+| `erlkoenig_nft-v*-x86_64-musl.tar.gz` | Alpine / static linking |
+| `erlkoenig_nft-v*-aarch64-glibc.tar.gz` | ARM64 Linux (Raspberry Pi, AWS Graviton, ...) |
+
+Options: `--prefix /path` (default `/opt/erlkoenig_nft`), `--version vX.Y.Z`,
+`--no-systemd`.
+
+After install:
+
+```bash
+sudo erlkoenig_nft start        # start the daemon
+sudo erlkoenig_nft status       # check status
+sudo nft list ruleset            # verify kernel rules
+erlkoenig --help                 # CLI tool
+```
+
+## Build from Source
 
 ```bash
 make                  # build Erlang core + Elixir DSL
 make erl              # or just the Erlang core
 
 # pick a config
-cp priv/examples/hardened_webserver.term priv/firewall.term
+cp examples/hardened_webserver.exs etc/firewall.exs
 
 rebar3 shell          # needs CAP_NET_ADMIN
 ```
 
 ## Elixir DSL
 
-The optional DSL (`dsl/`) compiles to the same `.term` format the Erlang
-runtime loads. Write firewall configs that read like firewall configs.
+The optional DSL (`dsl/`) compiles to the Erlang term format the runtime
+loads. Write firewall configs that read like firewall configs.
 
-### Hardened Web Server
+### Production Edge Server
+
+Shows sets, counters, quotas, verdict maps, flowtables, SYN proxy,
+rate metering, OS fingerprinting, NFQUEUE, conntrack marks, RPF
+checks, connection limits, and NFLOG — all in one config.
 
 ```elixir
-defmodule Firewall.Web do
+defmodule Firewall.Edge do
   use ErlkoenigNft.Firewall
 
-  firewall "webserver" do
-    counters [:ssh, :http, :https, :banned, :dropped]
+  firewall "edge" do
+    counters [:ssh, :http, :https, :dns, :banned, :dropped]
     set "blocklist", :ipv4_addr
     set "blocklist6", :ipv6_addr
+    quota :bandwidth, 10_000_000_000, flags: 0          # 10 GB soft quota
 
-    chain "prerouting_ban", hook: :prerouting, priority: -300, policy: :accept do
+    # Concat set: match (ip, port) pairs in a single O(1) lookup
+    concat_set "allowpairs", [:ipv4_addr, :inet_service]
+
+    # Verdict map: dispatch TCP ports to per-service chains
+    vmap "port_dispatch", :inet_service, id: 10
+
+    # Hardware flow offloading for established connections
+    flowtable "fastpath", hook: :ingress, priority: -100, devices: ["eth0"]
+
+    chain "prerouting", hook: :prerouting, priority: -300, policy: :accept do
+      rpf_check                                         # FIB reverse-path filter
       drop_if_in_set "blocklist", counter: :banned
       drop_if_in_set "blocklist6", counter: :banned
+      synproxy [80, 443], mss: 1460, wscale: 7         # SYN cookie protection
     end
 
     chain "inbound", hook: :input, policy: :drop do
       accept :established
+      offload "fastpath"                                # offload established flows
       accept :loopback
+      notrack 53, :udp                                  # skip conntrack for DNS
+
+      # Per-source rate limiting via kernel meter
+      meter_limit "ssh_meter", 22, :tcp, rate: 10, burst: 3, unit: :minute
+
       accept_tcp 22, counter: :ssh, limit: {25, burst: 5}
-      accept_tcp 80, counter: :http
-      accept_tcp 443, counter: :https
+      accept_tcp [80, 443], counter: :https
+      accept_udp 53, counter: :dns
+      accept_tcp_range 8000, 8099                       # app ports
+      accept_udp_range 27000, 27015                     # game traffic
+      accept_from {10, 0, 1, 0, 0, 0, 0, 0}            # private subnet
+      connlimit_drop 200                                # DDoS protection
+
+      # Conntrack marks: tag and match traffic
+      mark_connection 42
+      match_mark 42, verdict: :accept
+
+      # Dispatch TCP by port to per-service chains via verdict map
+      dispatch :tcp, "port_dispatch"
+
+      # OS fingerprinting: only allow Linux clients on port 9090
+      match_os "Linux", :accept
+
+      # NFQUEUE: send suspicious traffic to userspace IDS
+      queue_to 443, :tcp, queue: 0, fanout: true
+
+      # Cgroup-based filtering (container/systemd isolation)
+      match_cgroup 1234, :accept
+
       accept :icmp
       accept_protocol :icmpv6
-      log_and_drop "WEB-DROP: ", counter: :dropped
+      log_and_drop_nflog "EDGE-DROP: ", group: 1, counter: :dropped
     end
   end
 end
 ```
 
-### Mail Server with TLS Enforcement
-
-```elixir
-defmodule Firewall.Mail do
-  use ErlkoenigNft.Firewall
-
-  firewall "mailserver" do
-    counters [:smtp, :submission, :imaps, :pop3s, :banned, :dropped]
-    set "blocklist", :ipv4_addr
-    set "blocklist6", :ipv6_addr
-
-    chain "prerouting_ban", hook: :prerouting, priority: -300, policy: :accept do
-      drop_if_in_set "blocklist", counter: :banned
-      drop_if_in_set "blocklist6", counter: :banned
-    end
-
-    chain "inbound", hook: :input, policy: :drop do
-      accept :established
-      accept :loopback
-      accept_tcp 22, counter: :ssh, limit: {10, burst: 3}
-      accept_tcp 25, counter: :smtp, limit: {50, burst: 10}
-      accept_tcp 587, counter: :submission, limit: {100, burst: 20}
-      accept_tcp 993, counter: :imaps
-      accept_tcp 995, counter: :pop3s
-      reject_tcp 143                    # plaintext IMAP -> RST (use TLS!)
-      reject_tcp 110                    # plaintext POP3 -> RST (use TLS!)
-      accept :icmp
-      log_and_drop "MAIL-DROP: ", counter: :dropped
-    end
-  end
-end
-```
-
-### Database Server (Private Subnet Only)
-
-```elixir
-defmodule Firewall.Database do
-  use ErlkoenigNft.Firewall
-
-  firewall "dbserver" do
-    counters [:ssh, :postgres, :dropped]
-
-    chain "inbound", hook: :input, policy: :drop do
-      accept :established
-      accept :loopback
-      accept_tcp 22, counter: :ssh, limit: {10, burst: 3}
-      accept_from {10, 0, 1, 10}       # app-server-1
-      accept_from {10, 0, 1, 11}       # app-server-2
-      accept_from {10, 0, 1, 12}       # app-server-3
-      connlimit_drop 100               # max 100 concurrent conns per source
-      accept_tcp 5432, counter: :postgres
-      log_and_drop "DB-DROP: ", counter: :dropped
-    end
-  end
-end
-```
-
-### Game Server with Port Ranges
-
-```elixir
-defmodule Firewall.Game do
-  use ErlkoenigNft.Firewall
-
-  firewall "gameserver" do
-    counters [:game, :voice, :dropped]
-
-    chain "inbound", hook: :input, policy: :drop do
-      accept :established
-      accept :loopback
-      accept_tcp 22, limit: {10, burst: 3}
-      accept_udp_range 27015, 27030     # game traffic
-      accept_udp 9987, counter: :voice  # voice chat
-      accept_tcp_range 8080, 8089       # web admin panel
-      accept :icmp
-      log_and_drop "GAME-DROP: ", counter: :dropped
-    end
-  end
-end
-```
-
-### Dev Server (Relaxed, Reject Instead of Drop)
-
-```elixir
-defmodule Firewall.Dev do
-  use ErlkoenigNft.Firewall
-
-  firewall "devserver" do
-    counters [:ssh, :http, :phoenix, :epmd, :postgres]
-
-    chain "inbound", hook: :input, policy: :drop do
-      accept :established
-      accept :loopback
-      accept_tcp 22, counter: :ssh, limit: {25, burst: 5}
-      accept_tcp [80, 443]              # HTTP/HTTPS
-      accept_tcp [4000, 4001]           # Phoenix + LiveReload
-      accept_tcp 4369, counter: :epmd   # Erlang EPMD
-      accept_tcp_range 9100, 9155       # Erlang distribution
-      accept_tcp 5432, counter: :postgres
-      accept_tcp 3000                   # Grafana
-      accept :icmp
-      log_and_reject "DEV-REJECT: "     # ICMP unreachable, not silent drop
-    end
-  end
-end
-```
-
-### Reverse Proxy with Connection Limits
-
-```elixir
-defmodule Firewall.Proxy do
-  use ErlkoenigNft.Firewall
-
-  firewall "proxy" do
-    counters [:http_fwd, :https_fwd, :dropped]
-
-    chain "inbound", hook: :input, policy: :drop do
-      accept :established
-      accept :loopback
-      accept_tcp 22, limit: {10, burst: 3}
-      connlimit_drop 200               # DDoS protection per source
-      accept_tcp 80, counter: :http_fwd
-      accept_tcp 443, counter: :https_fwd
-      accept :icmp
-      log_and_drop "PROXY-DROP: ", counter: :dropped
-    end
-
-    chain "forward", hook: :forward, type: :filter, policy: :drop do
-      accept :established
-      accept_from {10, 0, 1, 100}      # backend server
-      log_and_drop "PROXY-FWD-DROP: "
-    end
-  end
-end
-```
-
-### Threat Detection
+### Threat Detection + Counter Monitoring
 
 ```elixir
 defmodule MyGuard do
   use ErlkoenigNft.Guard
 
   guard do
-    detect :conn_flood, threshold: 50, window: 10    # 50 conns in 10s -> ban
-    detect :port_scan, threshold: 20, window: 60     # 20 ports in 60s -> ban
-    ban_duration 3600                                 # 1 hour
+    detect :conn_flood, threshold: 50, window: 10
+    detect :port_scan, threshold: 20, window: 60
+    ban_duration 3600
     whitelist {127, 0, 0, 1}
-    whitelist {10, 0, 0, 1}                          # admin workstation
+    whitelist {10, 0, 0, 1}
     cleanup_interval 15_000
   end
 end
-```
 
-### Counter Monitoring with Alerts
-
-```elixir
-defmodule MyMonitoring do
+defmodule MyWatch do
   use ErlkoenigNft.Watch
 
   watch :traffic do
-    counter :ssh, :pps, threshold: 50                # brute force?
-    counter :http, :pps, threshold: 5000             # DDoS?
-    counter :dropped, :pps, threshold: 200           # mass scanning?
+    counter :ssh, :pps, threshold: 50
+    counter :http, :pps, threshold: 5000
+    counter :dropped, :pps, threshold: 200
     interval 2000
     on_alert :log
     on_alert {:webhook, "https://alerts.internal/fw"}
   end
 end
-```
 
-### Quick Profiles
-
-```elixir
-# One-liners for common setups
+# Quick profiles for simple setups
 ErlkoenigNft.Firewall.Profiles.get(:strict, allow_tcp: [22, 443])
 ErlkoenigNft.Firewall.Profiles.get(:standard, allow_udp: [51820])
-ErlkoenigNft.Firewall.Profiles.get(:open)
 ```
 
 ## Examples
 
-All 9 scenarios ship with both Erlang term configs and Elixir DSL versions:
+All 15 scenarios ship as Elixir DSL configs in [`examples/`](examples/):
 
-| Scenario | Erlang | Elixir |
-|----------|--------|--------|
-| Hardened web server | [`priv/examples/hardened_webserver.term`](priv/examples/hardened_webserver.term) | [`examples/hardened_webserver.exs`](examples/hardened_webserver.exs) |
-| Mail server (TLS enforcement) | [`priv/examples/mail_server.term`](priv/examples/mail_server.term) | [`examples/mail_server.exs`](examples/mail_server.exs) |
-| Database server (private subnet) | [`priv/examples/database_server.term`](priv/examples/database_server.term) | [`examples/database_server.exs`](examples/database_server.exs) |
-| VPN gateway (NAT + forwarding) | [`priv/examples/vpn_gateway.term`](priv/examples/vpn_gateway.term) | [`examples/vpn_gateway.exs`](examples/vpn_gateway.exs) |
-| DNS server (rate-limited) | [`priv/examples/dns_server.term`](priv/examples/dns_server.term) | [`examples/dns_server.exs`](examples/dns_server.exs) |
-| Game server (UDP port ranges) | [`priv/examples/game_server.term`](priv/examples/game_server.term) | [`examples/game_server.exs`](examples/game_server.exs) |
-| Reverse proxy (DNAT + connlimit) | [`priv/examples/reverse_proxy.term`](priv/examples/reverse_proxy.term) | [`examples/reverse_proxy.exs`](examples/reverse_proxy.exs) |
-| Docker host (bridge + containers) | [`priv/examples/docker_host.term`](priv/examples/docker_host.term) | [`examples/docker_host.exs`](examples/docker_host.exs) |
-| Dev server (relaxed, reject) | [`priv/examples/dev_server.term`](priv/examples/dev_server.term) | [`examples/dev_server.exs`](examples/dev_server.exs) |
+| Scenario | Config |
+|----------|--------|
+| **Default (installed on first run)** | [`examples/default.exs`](examples/default.exs) |
+| Hardened web server | [`examples/hardened_webserver.exs`](examples/hardened_webserver.exs) |
+| Mail server (TLS enforcement) | [`examples/mail_server.exs`](examples/mail_server.exs) |
+| Database server (private subnet) | [`examples/database_server.exs`](examples/database_server.exs) |
+| VPN gateway (NAT + forwarding) | [`examples/vpn_gateway.exs`](examples/vpn_gateway.exs) |
+| DNS server (rate-limited) | [`examples/dns_server.exs`](examples/dns_server.exs) |
+| Game server (UDP port ranges) | [`examples/game_server.exs`](examples/game_server.exs) |
+| Reverse proxy (DNAT + connlimit) | [`examples/reverse_proxy.exs`](examples/reverse_proxy.exs) |
+| Docker host (bridge + containers) | [`examples/docker_host.exs`](examples/docker_host.exs) |
+| Dev server (relaxed, reject) | [`examples/dev_server.exs`](examples/dev_server.exs) |
+| Per-source rate limiter (meters + quotas) | [`examples/rate_limiter.exs`](examples/rate_limiter.exs) |
+| SYN proxy server (anti-DDoS) | [`examples/synproxy_server.exs`](examples/synproxy_server.exs) |
+| IDS gateway (NFQUEUE + OS fingerprint) | [`examples/ids_gateway.exs`](examples/ids_gateway.exs) |
+| Service mesh (cgroups + flowtables) | [`examples/service_mesh.exs`](examples/service_mesh.exs) |
+| Anti-spoofing edge router (FIB + vmaps) | [`examples/anti_spoofing.exs`](examples/anti_spoofing.exs) |
 
 ## Erlang Term Config
 
@@ -380,6 +315,45 @@ erlkoenig_nft:guard_banned().
 %% => [#{ip => "203.0.113.42", reason => conn_flood, expires_in => 2847}]
 ```
 
+## CLI
+
+The `erlkoenig` command-line tool provides both daemon interaction and
+local config operations. Built with the Elixir DSL (`dsl/`).
+
+```bash
+mix escript.build    # in dsl/
+```
+
+### Daemon Commands
+
+Talk to a running erlkoenig_nft daemon via Unix socket:
+
+```bash
+erlkoenig status                    # firewall status overview
+erlkoenig counters                  # live counter values
+erlkoenig ban 203.0.113.42         # add IP to blocklist
+erlkoenig unban 203.0.113.42       # remove IP from blocklist
+erlkoenig reload                    # hot-reload config
+erlkoenig apply config.exs         # compile and apply new config
+erlkoenig guard stats              # threat detection statistics
+erlkoenig guard banned             # list currently banned IPs
+```
+
+### Local Commands
+
+Work with config files without a running daemon:
+
+```bash
+erlkoenig show config.exs          # pretty-print compiled config
+erlkoenig compile config.exs       # compile to .term (stdout or -o file)
+erlkoenig validate config.exs      # check config for errors
+erlkoenig inspect config.exs       # show internal IR structure
+erlkoenig diff a.exs b.exs         # diff two compiled configs
+erlkoenig list                      # list .exs configs in current dir
+erlkoenig version                   # print version
+erlkoenig completions bash          # shell completions (bash/zsh/fish)
+```
+
 ## Testing Without Root
 
 The built-in nf_tables virtual machine (`nft_vm`) executes rules in
@@ -420,11 +394,12 @@ BanPkt = nft_vm_pkt:with_sets(
     Sets).
 ```
 
-239 tests + 43 DSL tests, all without root:
+356 unit tests + 48 kernel integration tests + DSL tests:
 
 ```bash
 make check            # ct + dialyzer + DSL tests
-make test             # Erlang common test only
+make test             # Erlang common test (unit, kernel tests skipped without root)
+sudo make test        # includes kernel integration tests (requires root)
 make test-dsl         # Elixir DSL tests only
 make dialyzer         # static analysis
 ```
@@ -506,12 +481,13 @@ memory reduction.
 
 ### Code Generation
 
-38 of 83 modules are generated from the kernel's `nf_tables.h` via
+38 of 87 modules are generated from the kernel's `nf_tables.h` via
 `codegen/nft_gen.escript`. One module per expression type (payload,
 meta, cmp, counter, log, nat, ...). The generator handles TLV attribute
-boilerplate; all semantic logic is hand-written.
+boilerplate; all semantic logic is hand-written. Kernel constants are
+consolidated in a single header (`include/nft_constants.hrl`).
 
-~10,000 lines total. 45 hand-written modules (7,909 LOC), 38 generated
+~12,300 lines total. 49 hand-written modules (10,216 LOC), 38 generated
 (2,088 LOC).
 
 ## Requirements

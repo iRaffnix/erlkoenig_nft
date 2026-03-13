@@ -66,6 +66,49 @@ defmodule ErlkoenigNft.FirewallDslTest do
     end
   end
 
+  defmodule BlocklistFirewall do
+    use ErlkoenigNft.Firewall
+
+    firewall "blocklist_test" do
+      set "blocklist", :ipv4_addr, elements: ["10.0.0.5", "192.168.1.100"]
+
+      chain "inbound", hook: :input, policy: :drop do
+        accept :established
+        drop_if_in_set "blocklist"
+      end
+    end
+  end
+
+  defmodule TimeoutBlocklistFirewall do
+    use ErlkoenigNft.Firewall
+
+    firewall "timeout_blocklist" do
+      set "banlist", :ipv4_addr, timeout: 3600, elements: ["172.16.0.1"]
+
+      chain "inbound", hook: :input, policy: :drop do
+        accept :established
+        drop_if_in_set "banlist"
+      end
+    end
+  end
+
+  defmodule VmapFirewall do
+    use ErlkoenigNft.Firewall
+
+    firewall "vmap_test" do
+      vmap "port_dispatch", :inet_service, entries: [
+        {80, jump: "http_chain"},
+        {443, jump: "https_chain"},
+        {22, :accept}
+      ]
+
+      chain "inbound", hook: :input, policy: :drop do
+        accept :established
+        dispatch :tcp, "port_dispatch"
+      end
+    end
+  end
+
   describe "DSL compilation" do
     test "WebFirewall compiles with all features" do
       term = WebFirewall.config()
@@ -154,6 +197,56 @@ defmodule ErlkoenigNft.FirewallDslTest do
       content = File.read!(path)
       assert content =~ "inbound"
       File.rm!(path)
+    end
+
+    # --- Set with elements tests ---
+
+    test "BlocklistFirewall has set with elements" do
+      term = BlocklistFirewall.config()
+      [set] = term.sets
+      assert {"blocklist", :ipv4_addr, %{elements: ["10.0.0.5", "192.168.1.100"]}} = set
+    end
+
+    test "set with both elements and timeout" do
+      term = TimeoutBlocklistFirewall.config()
+      [set] = term.sets
+      {"banlist", :ipv4_addr, meta} = set
+      assert meta.timeout == 3600
+      assert meta.elements == ["172.16.0.1"]
+      assert :timeout in meta.flags
+    end
+
+    test "set with only elements (no timeout) has no timeout key" do
+      term = BlocklistFirewall.config()
+      [set] = term.sets
+      {"blocklist", :ipv4_addr, meta} = set
+      assert meta.elements == ["10.0.0.5", "192.168.1.100"]
+      refute Map.has_key?(meta, :timeout)
+    end
+
+    # --- Verdict map tests ---
+
+    test "VmapFirewall has vmap with entries" do
+      term = VmapFirewall.config()
+      assert Map.has_key?(term, :vmaps)
+      [vmap] = term.vmaps
+      assert vmap.name == "port_dispatch"
+      assert vmap.type == :inet_service
+      assert length(vmap.entries) == 3
+      assert {80, {:jump, "http_chain"}} in vmap.entries
+      assert {443, {:jump, "https_chain"}} in vmap.entries
+      assert {22, :accept} in vmap.entries
+    end
+
+    test "VmapFirewall chain has dispatch rule" do
+      term = VmapFirewall.config()
+      [chain] = term.chains
+      assert {:vmap_dispatch, :tcp, "port_dispatch"} in chain.rules
+    end
+
+    test "config without vmaps omits vmaps key" do
+      term = MinimalFirewall.config()
+      refute Map.has_key?(term, :vmaps)
     end
   end
 end

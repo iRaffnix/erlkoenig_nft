@@ -34,19 +34,9 @@ Protocol families:
 Corresponds to libnftnl src/table.c.
 """.
 
--export([add/3]).
+-export([add/3, add/4]).
 
-%% --- Constants ---
-
--define(NFT_MSG_NEWTABLE, 0).
-
-%% NFTA_TABLE_* from linux/netfilter/nf_tables.h
--define(NFTA_TABLE_NAME,  1).
--define(NFTA_TABLE_FLAGS, 2).
-
--define(NLM_F_REQUEST, 16#0001).
--define(NLM_F_ACK,     16#0004).
--define(NLM_F_CREATE,  16#0400).
+-include("nft_constants.hrl").
 
 %% --- Public API ---
 
@@ -61,13 +51,32 @@ Example:
     Batch = nft_batch:wrap([Msg], Seq).
 """.
 -spec add(0..255, binary(), non_neg_integer()) -> nfnl_msg:nl_msg().
-add(Family, Name, Seq)
+add(Family, Name, Seq) ->
+    add(Family, Name, #{}, Seq).
+
+-doc """
+Build a NEWTABLE message with options.
+
+Opts:
+    owner => true — set NFT_TABLE_F_OWNER (0x02) so the kernel
+    auto-removes the table when the owning netlink socket closes.
+
+Example:
+    Msg = nft_table:add(1, <<"fw">>, #{owner => true}, Seq).
+""".
+-spec add(0..255, binary(), map(), non_neg_integer()) -> nfnl_msg:nl_msg().
+add(Family, Name, Opts, Seq)
   when is_integer(Family), Family >= 0, Family =< 255,
        is_binary(Name), byte_size(Name) > 0,
+       is_map(Opts),
        is_integer(Seq), Seq >= 0 ->
+    TableFlags = case maps:get(owner, Opts, false) of
+        true  -> 16#02;  % NFT_TABLE_F_OWNER
+        false -> 0
+    end,
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_TABLE_NAME, Name),
-        nfnl_attr:encode_u32(?NFTA_TABLE_FLAGS, 0)
+        nfnl_attr:encode_u32(?NFTA_TABLE_FLAGS, TableFlags)
     ]),
     Flags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
     nfnl_msg:build_hdr(?NFT_MSG_NEWTABLE, Family, Flags, Seq, Attrs).

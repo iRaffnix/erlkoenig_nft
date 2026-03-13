@@ -423,7 +423,7 @@ defmodule MyFirewall do
 end
 
 MyFirewall.config()   # => Erlang term map
-MyFirewall.write!("priv/firewall.term")
+MyFirewall.write!("etc/firewall.term")
 ```
 
 The DSL is purely compile-time. `config/0` returns a plain map,

@@ -3,6 +3,5 @@
 -sname erlkoenig_nft
 -setcookie erlkoenig_nft
 -kernel inet_dist_use_interface {127,0,0,1}
--start_epmd false
 
 +sbwt very_short

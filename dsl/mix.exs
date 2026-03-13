@@ -18,7 +18,8 @@ defmodule ErlkoenigNft.DSL.MixProject do
   defp escript do
     [
       main_module: ErlkoenigNft.CLI,
-      name: "erlkoenig"
+      name: "erlkoenig",
+      embed_elixir: true
     ]
   end
 

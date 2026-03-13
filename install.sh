@@ -99,6 +99,10 @@ if ! curl -fsSL "$URL" | tar xz -C "$PREFIX"; then
     exit 1
 fi
 
+# --- Create config directory ---
+
+mkdir -p "$PREFIX/etc"
+
 # --- Install CLI to PATH ---
 
 if [ -f "$PREFIX/bin/erlkoenig" ]; then

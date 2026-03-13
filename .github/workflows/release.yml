@@ -27,10 +27,6 @@ jobs:
             runner: ubuntu-24.04-arm
             image: elixir:1.18-otp-27-slim
             deps: apt-get update && apt-get install -y git make gcc g++ curl
-          - name: aarch64-musl
-            runner: ubuntu-24.04-arm
-            image: hexpm/elixir:1.18.3-erlang-27.3-alpine-3.21.3
-            deps: apk add --no-cache git make gcc g++ musl-dev curl
 
     container:
       image: ${{ matrix.target.image }}

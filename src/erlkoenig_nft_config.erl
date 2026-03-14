@@ -19,23 +19,28 @@
 Shared configuration utilities.
 
 Locates the firewall.term config file using the search order:
-  1. $ERLKOENIG_CONFIG_DIR/firewall.term (default: /etc/erlkoenig_nft)
-  2. etc/firewall.term (development fallback)
+  1. $ERLKOENIG_CONFIG_DIR/firewall.term (explicit override)
+  2. etc/firewall.term (relative to CWD — works for release and dev)
+  3. /opt/erlkoenig_nft/etc/firewall.term (installed release)
 """.
 
 -export([config_path/0]).
 
 -spec config_path() -> {ok, string()} | {error, not_found}.
 config_path() ->
-    ConfigDir = os:getenv("ERLKOENIG_CONFIG_DIR", "/etc/erlkoenig_nft"),
-    EtcPath = filename:join(ConfigDir, "firewall.term"),
-    case filelib:is_regular(EtcPath) of
-        true ->
-            {ok, EtcPath};
+    Candidates = case os:getenv("ERLKOENIG_CONFIG_DIR") of
         false ->
-            %% Development fallback: etc/ in the project root
-            case filelib:is_regular("etc/firewall.term") of
-                true  -> {ok, "etc/firewall.term"};
-                false -> {error, not_found}
-            end
+            ["etc/firewall.term",
+             "/opt/erlkoenig_nft/etc/firewall.term"];
+        Dir ->
+            [filename:join(Dir, "firewall.term")]
+    end,
+    find_first(Candidates).
+
+-spec find_first([string()]) -> {ok, string()} | {error, not_found}.
+find_first([]) -> {error, not_found};
+find_first([Path | Rest]) ->
+    case filelib:is_regular(Path) of
+        true  -> {ok, Path};
+        false -> find_first(Rest)
     end.

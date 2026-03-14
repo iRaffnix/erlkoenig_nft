@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
+WorkingDirectory=@@PREFIX@@
 Environment=HOME=@@PREFIX@@
 ExecStart=@@PREFIX@@/bin/erlkoenig_nft_run
 Restart=on-failure

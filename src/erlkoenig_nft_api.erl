@@ -497,9 +497,11 @@ resolve_config_path() ->
         {ok, P} ->
             P;
         {error, _} ->
-            %% Fallback: resolve via ERLKOENIG_CONFIG_DIR or default
-            ConfigDir = os:getenv("ERLKOENIG_CONFIG_DIR", "/etc/erlkoenig_nft"),
-            filename:join(ConfigDir, "firewall.term")
+            %% Fallback: write to etc/ relative to CWD (release layout)
+            case os:getenv("ERLKOENIG_CONFIG_DIR") of
+                false -> "etc/firewall.term";
+                Dir -> filename:join(Dir, "firewall.term")
+            end
     end.
 
 validate_config_term(TermStr) ->

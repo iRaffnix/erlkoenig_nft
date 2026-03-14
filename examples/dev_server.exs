@@ -10,7 +10,7 @@ defmodule Firewall.DevServer do
   use ErlkoenigNft.Firewall
 
   firewall "devserver" do
-    counters [:ssh, :http, :https, :epmd, :phoenix, :postgres, :rejected]
+    counters [:ssh, :http, :https, :epmd, :phoenix, :postgres, :rejected, :banned]
     set "blocklist", :ipv4_addr
     set "blocklist6", :ipv6_addr
 

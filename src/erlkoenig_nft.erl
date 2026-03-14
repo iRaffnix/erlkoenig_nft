@@ -38,6 +38,19 @@ All functions delegate to the supervised gen_servers.
          rates/0,
          status/0,
          reload/0,
+         %% Listing API
+         list_chains/0,
+         list_sets/0,
+         list_set/1,
+         list_counters/0,
+         %% Element API
+         add_element/2,
+         del_element/2,
+         %% Diff API
+         diff_live/0,
+         %% Audit API
+         audit_log/0,
+         audit_log/1,
          %% Conntrack API
          ct_count/0,
          ct_count/1,
@@ -64,6 +77,7 @@ Accepts IPv4 or IPv6 as tuple, binary, or string:
 ban(IP) ->
     case erlkoenig_nft_firewall:ban(IP) of
         ok ->
+            erlkoenig_nft_audit:log(ban, #{ip => iolist_to_binary(io_lib:format("~s", [IP]))}),
             %% Also kill existing connections from this IP
             _ = case erlkoenig_nft_ip:normalize(IP) of
                 {ok, Bin} ->
@@ -80,7 +94,13 @@ ban(IP) ->
 -doc "Remove an IP address from the blocklist (IPv4 or IPv6).".
 -spec unban(inet:ip_address() | binary() | string()) -> ok | {error, term()}.
 unban(IP) ->
-    erlkoenig_nft_firewall:unban(IP).
+    case erlkoenig_nft_firewall:unban(IP) of
+        ok ->
+            erlkoenig_nft_audit:log(unban, #{ip => iolist_to_binary(io_lib:format("~s", [IP]))}),
+            ok;
+        {error, _} = Err ->
+            Err
+    end.
 
 -doc "Get current rates for all watched counters.".
 -spec rates() -> #{binary() => map()}.
@@ -100,7 +120,80 @@ Existing connections are preserved.
 """.
 -spec reload() -> ok | {error, term()}.
 reload() ->
-    erlkoenig_nft_firewall:reload().
+    case erlkoenig_nft_firewall:reload() of
+        ok ->
+            erlkoenig_nft_audit:log(reload, #{}),
+            ok;
+        {error, _} = Err ->
+            Err
+    end.
+
+%% --- Listing API ---
+
+-doc "List chains with hook, type, policy, and rule count.".
+-spec list_chains() -> [map()].
+list_chains() ->
+    erlkoenig_nft_firewall:list_chains().
+
+-doc "List named sets with their types.".
+-spec list_sets() -> [map()].
+list_sets() ->
+    erlkoenig_nft_firewall:list_sets().
+
+-doc "Show elements of a named set (config-known elements).".
+-spec list_set(binary() | string()) -> {ok, map()} | {error, term()}.
+list_set(Name) ->
+    erlkoenig_nft_firewall:list_set(Name).
+
+-doc "List counters with current rate values.".
+-spec list_counters() -> [map()].
+list_counters() ->
+    erlkoenig_nft_firewall:list_counters().
+
+%% --- Element API ---
+
+-doc "Add an element to a named set.".
+-spec add_element(binary() | string(), binary() | string()) -> ok | {error, term()}.
+add_element(SetName, Value) ->
+    case erlkoenig_nft_firewall:add_element(SetName, Value) of
+        ok ->
+            erlkoenig_nft_audit:log(add_element, #{set => iolist_to_binary([SetName]),
+                                                    value => iolist_to_binary(io_lib:format("~s", [Value]))}),
+            ok;
+        {error, _} = Err ->
+            Err
+    end.
+
+-doc "Delete an element from a named set.".
+-spec del_element(binary() | string(), binary() | string()) -> ok | {error, term()}.
+del_element(SetName, Value) ->
+    case erlkoenig_nft_firewall:del_element(SetName, Value) of
+        ok ->
+            erlkoenig_nft_audit:log(del_element, #{set => iolist_to_binary([SetName]),
+                                                    value => iolist_to_binary(io_lib:format("~s", [Value]))}),
+            ok;
+        {error, _} = Err ->
+            Err
+    end.
+
+%% --- Diff API ---
+
+-doc "Compare running kernel state against config. Returns a list of diffs.".
+-spec diff_live() -> [map()].
+diff_live() ->
+    erlkoenig_nft_firewall:diff_live().
+
+%% --- Audit API ---
+
+-doc "Get all audit log entries.".
+-spec audit_log() -> [map()].
+audit_log() ->
+    erlkoenig_nft_audit:entries().
+
+-doc "Get the last N audit log entries.".
+-spec audit_log(pos_integer()) -> [map()].
+audit_log(N) ->
+    erlkoenig_nft_audit:entries(N).
 
 %% --- Conntrack API ---
 

@@ -26,7 +26,8 @@ Uses rest_for_one strategy. Children are ordered by dependency:
     4. erlkoenig_nft_ct             — Conntrack event monitor
     5. erlkoenig_nft_ct_guard       — Automatic threat detection
     6. erlkoenig_nft_watch_sup      — Dynamic supervisor for counters
-    7. erlkoenig_nft_firewall       — Config owner, lifecycle manager
+    7. erlkoenig_nft_audit          — Audit log for operations
+    8. erlkoenig_nft_firewall       — Config owner, lifecycle manager
 
 If erlkoenig_nft_srv crashes, everything after it restarts. The firewall
 gets re-applied automatically on restart.
@@ -104,7 +105,16 @@ init([]) ->
             type     => supervisor,
             modules  => [erlkoenig_nft_watch_sup]
         },
-        %% 7. Firewall config owner — last, depends on all above
+        %% 7. Audit log — records firewall operations
+        #{
+            id       => erlkoenig_nft_audit,
+            start    => {erlkoenig_nft_audit, start_link, []},
+            restart  => permanent,
+            shutdown => 5000,
+            type     => worker,
+            modules  => [erlkoenig_nft_audit]
+        },
+        %% 8. Firewall config owner — last, depends on all above
         #{
             id       => erlkoenig_nft_firewall,
             start    => {erlkoenig_nft_firewall, start_link, []},

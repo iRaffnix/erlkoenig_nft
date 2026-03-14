@@ -8,7 +8,7 @@ defmodule ErlkoenigNft.CLI do
     erlkoenig validate <file.exs>       Validate DSL config
     erlkoenig inspect <file.exs>        Show raw Erlang term structure
     erlkoenig diff <a.exs> <b.exs>      Compare two firewall configs
-    erlkoenig list [dir]                List available examples
+    erlkoenig examples [dir]            List available examples
 
     erlkoenig status                    Show daemon status
     erlkoenig ban <ip>                  Ban an IP address
@@ -17,6 +17,18 @@ defmodule ErlkoenigNft.CLI do
     erlkoenig apply <file.exs>          Compile and apply to running daemon
     erlkoenig counters                  Show live counter rates
     erlkoenig guard [stats|banned]      Show ct_guard info
+
+    erlkoenig list ruleset              Show live ruleset
+    erlkoenig list chains               List chains
+    erlkoenig list sets                 List sets
+    erlkoenig list set <name>           Show set elements (live kernel)
+    erlkoenig list counters             List counters with sparklines
+    erlkoenig add element <set> <val>   Add element to a set
+    erlkoenig delete element <set> <val> Delete element from a set
+    erlkoenig monitor                   Live-stream counter rates
+    erlkoenig diff live                 Compare kernel vs config
+    erlkoenig top [n]                   Top source IPs by connections
+    erlkoenig log [n]                   Show audit log
 
     erlkoenig version                   Show version
     erlkoenig completions [bash|zsh|fish]  Print shell completions
@@ -38,13 +50,32 @@ defmodule ErlkoenigNft.CLI do
       ["guard", "stats"] -> cmd_daemon("guard_stats")
       ["guard", "banned"] -> cmd_daemon("guard_banned")
       ["guard" | _] -> error("Usage: erlkoenig guard [stats|banned]")
+      ["monitor" | _] -> cmd_monitor()
+      ["diff", "live" | _] -> cmd_daemon("diff_live")
+      ["top", n] -> cmd_daemon("top", %{"n" => String.to_integer(n)})
+      ["top" | _] -> cmd_daemon("top")
+      ["log", n] -> cmd_daemon("audit_log", %{"n" => String.to_integer(n)})
+      ["log" | _] -> cmd_daemon("audit_log")
+      # nft-style list commands (daemon)
+      ["list", "ruleset" | _] -> cmd_daemon("list_ruleset")
+      ["list", "chains" | _] -> cmd_daemon("list_chains")
+      ["list", "sets" | _] -> cmd_daemon("list_sets")
+      ["list", "set", name] -> cmd_daemon("list_set", %{"name" => name})
+      ["list", "set" | _] -> error("Usage: erlkoenig list set <name>")
+      ["list", "counters" | _] -> cmd_daemon("list_counters")
+      ["list" | _] -> error("Usage: erlkoenig list [ruleset|chains|sets|set <name>|counters]")
+      # nft-style element commands (daemon)
+      ["add", "element", set | values] when values != [] -> cmd_add_elements(set, values)
+      ["add", "element" | _] -> error("Usage: erlkoenig add element <set> <value> [<value>...]")
+      ["delete", "element", set | values] when values != [] -> cmd_delete_elements(set, values)
+      ["delete", "element" | _] -> error("Usage: erlkoenig delete element <set> <value> [<value>...]")
       # Local commands (no daemon needed)
       ["show" | rest] -> cmd_show(rest)
       ["compile" | rest] -> cmd_compile(rest)
       ["validate" | rest] -> cmd_validate(rest)
       ["inspect" | rest] -> cmd_inspect(rest)
       ["diff", a, b] -> cmd_diff(a, b)
-      ["list" | rest] -> cmd_list(rest)
+      ["examples" | rest] -> cmd_examples(rest)
       ["completions", shell] -> cmd_completions(shell)
       ["completions" | _] -> cmd_completions("bash")
       ["version" | _] -> cmd_version()
@@ -198,8 +229,217 @@ defmodule ErlkoenigNft.CLI do
     end
   end
 
+  defp render_daemon_response("list_ruleset", data) do
+    header("ruleset")
+    config = data["config"] || data
+
+    case config["chains"] do
+      chains when is_list(chains) ->
+        for c <- chains do
+          rules = c["rules"] || []
+          IO.puts("  chain #{color(:cyan, c["name"])} {")
+          IO.puts("    type #{c["type"] || "filter"} hook #{c["hook"]} priority #{c["priority"] || 0}; policy #{c["policy"] || "accept"};")
+          IO.puts("    # #{length(rules)} rules")
+          IO.puts("  }")
+        end
+      _ -> :ok
+    end
+
+    case config["sets"] do
+      sets when is_list(sets) ->
+        for s <- sets do
+          IO.puts("  set #{color(:cyan, s["name"] || List.first(s))} { type #{s["type"] || Enum.at(s, 1)} }")
+        end
+      _ -> :ok
+    end
+  end
+
+  defp render_daemon_response("list_chains", data) do
+    header("chains")
+
+    for c <- data do
+      IO.puts("  #{color(:cyan, c["name"])} #{c["hook"]} priority #{c["priority"]} policy #{c["policy"]} (#{c["rules"]} rules)")
+    end
+  end
+
+  defp render_daemon_response("list_sets", data) do
+    header("sets")
+
+    for s <- data do
+      flags = if s["flags"], do: " [#{inspect(s["flags"])}]", else: ""
+      IO.puts("  #{color(:cyan, s["name"])} type #{s["type"]}#{flags}")
+    end
+  end
+
+  defp render_daemon_response("list_set", data) do
+    header("set #{data["name"]}")
+    IO.puts("  type: #{data["type"]}")
+
+    elements = data["elements"] || []
+    config_elements = data["config_elements"] || []
+
+    if elements == [] and config_elements == [] do
+      info("  (empty)")
+    else
+      if elements != [] do
+        IO.puts("  elements (live kernel): #{length(elements)}")
+        for e <- elements, do: IO.puts("    #{e}")
+      end
+
+      if config_elements != [] do
+        IO.puts("  elements (config): #{length(config_elements)}")
+        for e <- config_elements, do: IO.puts("    #{inspect(e)}")
+      end
+    end
+  end
+
+  defp render_daemon_response("list_counters", data) do
+    header("counters")
+
+    for c <- data do
+      pps = c["pps"] || 0
+      total_pkts = c["total_packets"] || c["packets"] || 0
+      total_bytes = c["total_bytes"] || c["bytes"] || 0
+      history = c["history"] || []
+      spark = sparkline(history)
+
+      pps_str = format_rate(pps)
+      IO.puts("  #{String.pad_trailing(c["name"], 16)} #{String.pad_leading(pps_str, 8)} pps  #{spark}  #{total_pkts} pkts  #{format_bytes(total_bytes)}")
+    end
+  end
+
+  defp render_daemon_response("top", data) do
+    sources = data["sources"] || []
+    total = data["total"] || 0
+    mode = data["mode"] || "unknown"
+
+    header("top sources (#{total} connections, #{mode} mode)")
+
+    if sources == [] do
+      info("  (no connections)")
+    else
+      max_count = sources |> Enum.map(fn s -> Enum.at(s, 1, 0) end) |> Enum.max(fn -> 1 end)
+
+      for s <- sources do
+        [ip, count] = s
+        bar_len = if max_count > 0, do: trunc(count / max_count * 30), else: 0
+        bar = String.duplicate("█", bar_len)
+        IO.puts("  #{String.pad_trailing(to_string(ip), 40)} #{String.pad_leading(to_string(count), 6)}  #{color(:cyan, bar)}")
+      end
+    end
+  end
+
+  defp render_daemon_response("audit_log", data) do
+    if data == [] or data == nil do
+      info("  (no audit entries)")
+    else
+      header("audit log")
+      for entry <- data do
+        time = entry["time"] || "?"
+        action = entry["action"] || "?"
+        details = entry["details"] || %{}
+
+        detail_str = details
+          |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
+          |> Enum.join(" ")
+
+        action_color = case action do
+          a when a in ["ban", "del_element"] -> :red
+          a when a in ["unban", "add_element"] -> :green
+          "reload" -> :yellow
+          _ -> :cyan
+        end
+
+        IO.puts("  #{color(:dim, time)}  #{color(action_color, String.pad_trailing(action, 14))} #{detail_str}")
+      end
+    end
+  end
+
+  defp render_daemon_response("diff_live", data) do
+    if data == [] or data == nil do
+      success("Config and kernel are in sync")
+    else
+      header("config drift")
+      for d <- data do
+        case d["type"] do
+          "missing_chain" ->
+            IO.puts("  #{color(:red, "-")} chain #{color(:cyan, d["chain"])} #{d["detail"]}")
+          "extra_chain" ->
+            IO.puts("  #{color(:green, "+")} chain #{color(:cyan, d["chain"])} #{d["detail"]}")
+          "missing_set" ->
+            IO.puts("  #{color(:red, "!")} set #{color(:cyan, d["set"])} #{d["detail"]}")
+          "set_elements" ->
+            IO.puts("  #{color(:yellow, "~")} set #{color(:cyan, d["set"])} config=#{d["config_count"]} kernel=#{d["kernel_count"]}")
+          _ ->
+            IO.puts("  #{inspect(d)}")
+        end
+      end
+    end
+  end
+
   defp render_daemon_response(_cmd, data) do
     IO.puts(inspect(data, pretty: true, width: 80))
+  end
+
+  defp cmd_add_elements(set, values) do
+    for value <- values do
+      cmd_daemon("add_element", %{"set" => set, "value" => value})
+    end
+  end
+
+  defp cmd_delete_elements(set, values) do
+    for value <- values do
+      cmd_daemon("del_element", %{"set" => set, "value" => value})
+    end
+  end
+
+  defp cmd_monitor do
+    IO.puts(color(:dim, "Streaming counter rates (Ctrl-C to stop)...\n"))
+
+    case Daemon.stream("monitor", %{}, fn resp ->
+      case resp do
+        %{"ok" => true, "data" => data} ->
+          render_monitor_frame(data)
+        _ ->
+          :ok
+      end
+    end) do
+      {:error, :not_running} ->
+        error("Cannot connect to daemon. Is erlkoenig_nft running?")
+        System.halt(1)
+      {:error, :permission_denied} ->
+        error("Permission denied.")
+        System.halt(1)
+      {:error, reason} ->
+        error("Connection error: #{inspect(reason)}")
+        System.halt(1)
+      _ ->
+        :ok
+    end
+  end
+
+  defp render_monitor_frame(data) do
+    counters = data["counters"] || []
+    # Clear screen and move cursor to top
+    IO.write("\e[2J\e[H")
+    IO.puts(color(:bold, "── erlkoenig monitor ──") <> "  " <> color(:dim, NaiveDateTime.to_string(NaiveDateTime.local_now())))
+    IO.puts("")
+
+    for c <- counters do
+      pps = c["pps"] || 0
+      bps = c["bps"] || 0
+      total_pkts = c["total_packets"] || 0
+      total_bytes = c["total_bytes"] || 0
+      history = c["history"] || []
+      spark = sparkline(history)
+
+      pps_str = format_rate(pps)
+      bps_str = format_bytes(bps) <> "/s"
+      IO.puts("  #{color(:cyan, String.pad_trailing(c["name"], 16))} #{String.pad_leading(pps_str, 8)} pps  #{String.pad_leading(bps_str, 12)}  #{spark}  #{total_pkts} pkts  #{format_bytes(total_bytes)}")
+    end
+
+    IO.puts("")
+    IO.puts(color(:dim, "  Ctrl-C to stop"))
   end
 
   # --- Local commands ---
@@ -297,11 +537,11 @@ defmodule ErlkoenigNft.CLI do
     Formatter.render_diff(fw_a, fw_b, Path.basename(file_a), Path.basename(file_b))
   end
 
-  defp cmd_list(args) do
+  defp cmd_examples(args) do
     dir = List.first(args) || find_examples_dir()
 
     if dir == nil or not File.dir?(dir) do
-      error("Examples directory not found. Usage: erlkoenig list [directory]")
+      error("Examples directory not found. Usage: erlkoenig examples [directory]")
       System.halt(1)
     end
 
@@ -359,6 +599,19 @@ defmodule ErlkoenigNft.CLI do
       #{color(:cyan, "counters")}                     Show live counter rates
       #{color(:cyan, "guard")} stats                   Show detection statistics
       #{color(:cyan, "guard")} banned                  Show banned IPs
+      #{color(:cyan, "monitor")}                      Live-stream counter rates
+      #{color(:cyan, "diff live")}                     Compare running kernel vs config
+      #{color(:cyan, "top")} [n]                         Top source IPs by connection count
+      #{color(:cyan, "log")} [n]                         Show audit log (last n entries)
+
+    #{color(:bold, "NFT-STYLE COMMANDS")} (query/modify running firewall)
+      #{color(:cyan, "list ruleset")}                  Show live ruleset (chains + sets)
+      #{color(:cyan, "list chains")}                   List chains with hook/policy/rule count
+      #{color(:cyan, "list sets")}                     List set names and types
+      #{color(:cyan, "list set")} <name>                Show elements of a named set
+      #{color(:cyan, "list counters")}                 List counter names and current values
+      #{color(:cyan, "add element")} <set> <val>...     Add element(s) to a named set
+      #{color(:cyan, "delete element")} <set> <val>...  Delete element(s) from a named set
 
     #{color(:bold, "LOCAL COMMANDS")} (no daemon needed)
       #{color(:cyan, "show")} <file.exs>               Render firewall as nft-style ruleset
@@ -366,7 +619,7 @@ defmodule ErlkoenigNft.CLI do
       #{color(:cyan, "validate")} <file.exs>            Validate DSL config for errors
       #{color(:cyan, "inspect")} <file.exs>             Show raw Erlang term structure
       #{color(:cyan, "diff")} <a.exs> <b.exs>           Compare two firewall configs
-      #{color(:cyan, "list")} [dir]                    List available example configs
+      #{color(:cyan, "examples")} [dir]                List available example configs
       #{color(:cyan, "version")}                       Show version
       #{color(:cyan, "completions")} [bash|zsh|fish]    Print shell completions
 
@@ -375,6 +628,8 @@ defmodule ErlkoenigNft.CLI do
       erlkoenig compile examples/hardened_webserver.exs -o /etc/erlkoenig_nft/firewall.term
       erlkoenig apply examples/hardened_webserver.exs
       erlkoenig ban 10.0.0.5
+      erlkoenig list sets
+      erlkoenig add element blocklist4 10.0.0.5
       erlkoenig counters
       erlkoenig guard banned
 
@@ -558,8 +813,9 @@ defmodule ErlkoenigNft.CLI do
 
   # --- Shell completions ---
 
-  @commands ~w(status ban unban reload apply counters guard show compile validate inspect diff list version completions help)
+  @commands ~w(status ban unban reload apply counters guard monitor top log list add delete show compile validate inspect diff examples version completions help)
   @guard_subcommands ~w(stats banned)
+  @list_subcommands ~w(ruleset chains sets set counters)
   @completions_shells ~w(bash zsh fish)
 
   defp completions_bash do
@@ -580,15 +836,23 @@ defmodule ErlkoenigNft.CLI do
                 COMPREPLY=( $(compgen -W "#{Enum.join(@guard_subcommands, " ")}" -- "$cur") )
                 return 0
                 ;;
+            list)
+                COMPREPLY=( $(compgen -W "#{Enum.join(@list_subcommands, " ")}" -- "$cur") )
+                return 0
+                ;;
+            add|delete)
+                COMPREPLY=( $(compgen -W "element" -- "$cur") )
+                return 0
+                ;;
+            diff)
+                COMPREPLY=( $(compgen -W "live" -- "$cur") $(compgen -f -X '!*.exs' -- "$cur") $(compgen -d -- "$cur") )
+                return 0
+                ;;
             completions)
                 COMPREPLY=( $(compgen -W "#{Enum.join(@completions_shells, " ")}" -- "$cur") )
                 return 0
                 ;;
             show|compile|validate|inspect|apply)
-                COMPREPLY=( $(compgen -f -X '!*.exs' -- "$cur") $(compgen -d -- "$cur") )
-                return 0
-                ;;
-            diff)
                 COMPREPLY=( $(compgen -f -X '!*.exs' -- "$cur") $(compgen -d -- "$cur") )
                 return 0
                 ;;
@@ -618,12 +882,19 @@ defmodule ErlkoenigNft.CLI do
             'apply:Compile and apply to running daemon'
             'counters:Show live counter rates'
             'guard:Show threat detection info'
+            'monitor:Live-stream counter rates'
+            'top:Top source IPs by connection count'
+            'log:Show audit log'
+            'diff:Compare firewall configs or live drift'
+            'list:List firewall objects (ruleset, chains, sets, counters)'
+            'add:Add element to a set'
+            'delete:Delete element from a set'
             'show:Render firewall as nft-style ruleset'
             'compile:Compile DSL to .term config file'
             'validate:Validate DSL config for errors'
             'inspect:Show raw Erlang term structure'
             'diff:Compare two firewall configs'
-            'list:List available example configs'
+            'examples:List available example configs'
             'version:Show version'
             'completions:Print shell completions'
             'help:Show usage'
@@ -638,6 +909,16 @@ defmodule ErlkoenigNft.CLI do
                     guard_sub=('stats:Show detection statistics' 'banned:Show banned IPs')
                     _describe 'subcommand' guard_sub
                     ;;
+                list)
+                    local -a list_sub
+                    list_sub=('ruleset:Show live ruleset' 'chains:List chains' 'sets:List sets' 'set:Show set elements' 'counters:List counters')
+                    _describe 'subcommand' list_sub
+                    ;;
+                add|delete)
+                    local -a elem_sub
+                    elem_sub=('element:Set element')
+                    _describe 'subcommand' elem_sub
+                    ;;
                 completions)
                     local -a shells
                     shells=(bash zsh fish)
@@ -647,6 +928,9 @@ defmodule ErlkoenigNft.CLI do
                     _files -g '*.exs'
                     ;;
                 diff)
+                    local -a diff_sub
+                    diff_sub=('live:Compare kernel vs config')
+                    _describe 'subcommand' diff_sub
                     _files -g '*.exs'
                     ;;
             esac
@@ -666,12 +950,18 @@ defmodule ErlkoenigNft.CLI do
       {"apply", "Compile and apply to running daemon"},
       {"counters", "Show live counter rates"},
       {"guard", "Show threat detection info"},
+      {"monitor", "Live-stream counter rates"},
+      {"top", "Top source IPs by connection count"},
+      {"log", "Show audit log"},
+      {"list", "List firewall objects"},
+      {"add", "Add element to a set"},
+      {"delete", "Delete element from a set"},
       {"show", "Render firewall as nft-style ruleset"},
       {"compile", "Compile DSL to .term config file"},
       {"validate", "Validate DSL config for errors"},
       {"inspect", "Show raw Erlang term structure"},
       {"diff", "Compare two firewall configs"},
-      {"list", "List available example configs"},
+      {"examples", "List available example configs"},
       {"version", "Show version"},
       {"completions", "Print shell completions"},
       {"help", "Show usage"}
@@ -686,6 +976,14 @@ defmodule ErlkoenigNft.CLI do
     complete -c erlkoenig -n '__fish_seen_subcommand_from guard' -a 'stats banned'
     """
 
+    list_sub = """
+    complete -c erlkoenig -n '__fish_seen_subcommand_from list' -a 'ruleset chains sets set counters'
+    """
+
+    add_del = """
+    complete -c erlkoenig -n '__fish_seen_subcommand_from add delete' -a 'element'
+    """
+
     completions = """
     complete -c erlkoenig -n '__fish_seen_subcommand_from completions' -a 'bash zsh fish'
     """
@@ -694,7 +992,46 @@ defmodule ErlkoenigNft.CLI do
     complete -c erlkoenig -n '__fish_seen_subcommand_from show compile validate inspect apply diff' -F -r
     """
 
-    Enum.join(main, "\n") <> "\n" <> guard <> completions <> file_cmds
+    Enum.join(main, "\n") <> "\n" <> guard <> list_sub <> add_del <> completions <> file_cmds
+  end
+
+  # --- Formatting helpers ---
+
+  @sparkline_chars ~w(▁ ▂ ▃ ▄ ▅ ▆ ▇ █)
+
+  defp sparkline([]), do: String.duplicate("░", 20)
+  defp sparkline(values) do
+    max_val = Enum.max(values)
+    if max_val == 0 do
+      String.duplicate("▁", length(values))
+    else
+      values
+      |> Enum.map(fn v ->
+        idx = trunc(v / max_val * 7)
+        idx = min(idx, 7)
+        Enum.at(@sparkline_chars, idx)
+      end)
+      |> Enum.join()
+    end
+  end
+
+  defp format_rate(rate) when is_float(rate) do
+    cond do
+      rate >= 1_000_000 -> "#{Float.round(rate / 1_000_000, 1)}M"
+      rate >= 1_000 -> "#{Float.round(rate / 1_000, 1)}K"
+      rate >= 1 -> "#{Float.round(rate, 1)}"
+      true -> "0"
+    end
+  end
+  defp format_rate(rate) when is_integer(rate), do: format_rate(rate / 1)
+
+  defp format_bytes(bytes) when is_number(bytes) do
+    cond do
+      bytes >= 1_073_741_824 -> "#{Float.round(bytes / 1_073_741_824, 1)} GiB"
+      bytes >= 1_048_576 -> "#{Float.round(bytes / 1_048_576, 1)} MiB"
+      bytes >= 1024 -> "#{Float.round(bytes / 1024, 1)} KiB"
+      true -> "#{trunc(bytes)} B"
+    end
   end
 
   # --- Output helpers ---

@@ -35,6 +35,9 @@ Then used by name from any process:
          apply_msgs/2,
          get_counter/4,
          get_counter_reset/4,
+         list_set_elems/4,
+         list_chains/3,
+         get_ruleset/2,
          stop/1]).
 
 -export([init/1,
@@ -116,6 +119,24 @@ Netlink socket. Safe to call from any process.
 get_counter_reset(Server, Family, Table, Name) ->
     gen_server:call(Server, {get_counter_reset, Family, Table, Name}, ?RECV_TIMEOUT + 2000).
 
+-doc "List elements of a named set via netlink GET.".
+-spec list_set_elems(server_ref(), 0..255, binary(), binary()) ->
+    {ok, [binary()]} | {error, term()}.
+list_set_elems(Server, Family, Table, SetName) ->
+    gen_server:call(Server, {list_set_elems, Family, Table, SetName}, ?RECV_TIMEOUT + 2000).
+
+-doc "List chains in a table via netlink GET.".
+-spec list_chains(server_ref(), 0..255, binary()) ->
+    {ok, [map()]} | {error, term()}.
+list_chains(Server, Family, Table) ->
+    gen_server:call(Server, {list_chains, Family, Table}, ?RECV_TIMEOUT + 2000).
+
+-doc "Get full ruleset for a family via netlink GET.".
+-spec get_ruleset(server_ref(), 0..255) ->
+    {ok, [map()]} | {error, term()}.
+get_ruleset(Server, Family) ->
+    gen_server:call(Server, {get_ruleset, Family}, ?RECV_TIMEOUT + 2000).
+
 -doc "Stop the server.".
 -spec stop(server_ref()) -> ok.
 stop(Server) ->
@@ -150,6 +171,15 @@ handle_call({get_counter, Family, Table, Name}, _From, #{socket := Sock} = State
     {reply, Result, State};
 handle_call({get_counter_reset, Family, Table, Name}, _From, #{socket := Sock} = State) ->
     Result = nft_object:get_counter_reset(Sock, Family, Table, Name),
+    {reply, Result, State};
+handle_call({list_set_elems, Family, Table, SetName}, _From, #{socket := Sock} = State) ->
+    Result = nft_query:list_set_elems(Sock, Family, Table, SetName),
+    {reply, Result, State};
+handle_call({list_chains, Family, Table}, _From, #{socket := Sock} = State) ->
+    Result = nft_query:list_chains(Sock, Family, Table),
+    {reply, Result, State};
+handle_call({get_ruleset, Family}, _From, #{socket := Sock} = State) ->
+    Result = nft_query:get_ruleset(Sock, Family),
     {reply, Result, State};
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.

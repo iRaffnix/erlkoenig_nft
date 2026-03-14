@@ -32,7 +32,9 @@ Socket path (in order of precedence):
   2. application:get_env(erlkoenig_nft, api_socket)
   3. /var/run/erlkoenig.sock
 
-Commands: status, ban, unban, reload, apply, counters, guard_stats, guard_banned
+Commands: status, ban, unban, reload, apply, counters, guard_stats, guard_banned,
+          list_ruleset, list_chains, list_sets, list_set, list_counters,
+          add_element, del_element
 """.
 
 -behaviour(gen_server).
@@ -197,11 +199,17 @@ client_loop(Sock, Buf) ->
         {Pos, 1} ->
             Line = binary:part(Buf, 0, Pos),
             Rest = binary:part(Buf, Pos + 1, byte_size(Buf) - Pos - 1),
-            Response = process_request(Line),
-            RespBin = [json:encode(Response), <<"\n">>],
-            case socket:send(Sock, RespBin) of
-                ok -> client_loop(Sock, Rest);
-                {error, _} -> _ = socket:close(Sock), ok
+            case process_request(Line) of
+                {stream, monitor, Interval} ->
+                    stream_monitor(Sock, Interval),
+                    _ = socket:close(Sock),
+                    ok;
+                Response ->
+                    RespBin = [json:encode(Response), <<"\n">>],
+                    case socket:send(Sock, RespBin) of
+                        ok -> client_loop(Sock, Rest);
+                        {error, _} -> _ = socket:close(Sock), ok
+                    end
             end;
         nomatch ->
             case socket:recv(Sock, 0, 30000) of
@@ -220,6 +228,22 @@ process_request(Line) ->
     catch
         _:_ ->
             #{<<"ok">> => false, <<"error">> => <<"invalid request">>}
+    end.
+
+%% --- Internal: Streaming handler ---
+
+stream_monitor(Sock, Interval) ->
+    Rates = erlkoenig_nft:rates(),
+    Counters = erlkoenig_nft:list_counters(),
+    Data = #{<<"counters">> => term_to_json(Counters),
+             <<"rates">> => term_to_json(Rates)},
+    Msg = [json:encode(#{<<"ok">> => true, <<"data">> => Data}), <<"\n">>],
+    case socket:send(Sock, Msg) of
+        ok ->
+            timer:sleep(Interval),
+            stream_monitor(Sock, Interval);
+        {error, _} ->
+            ok
     end.
 
 %% --- Internal: Command dispatch ---
@@ -322,6 +346,142 @@ dispatch(#{<<"cmd">> := <<"guard_banned">>}) ->
     catch _:E ->
         logger:warning("API guard_banned error: ~p", [E]),
         #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"monitor">>, <<"interval">> := Interval})
+  when is_integer(Interval), Interval >= 500 ->
+    %% Handled specially — returns a stream marker
+    {stream, monitor, Interval};
+dispatch(#{<<"cmd">> := <<"monitor">>}) ->
+    {stream, monitor, 2000};
+
+dispatch(#{<<"cmd">> := <<"list_ruleset">>}) ->
+    try
+        Status = erlkoenig_nft:status(),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Status)}
+    catch _:E ->
+        logger:warning("API list_ruleset error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"list_chains">>}) ->
+    try
+        Data = erlkoenig_nft:list_chains(),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
+    catch _:E ->
+        logger:warning("API list_chains error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"list_sets">>}) ->
+    try
+        Data = erlkoenig_nft:list_sets(),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
+    catch _:E ->
+        logger:warning("API list_sets error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"list_set">>, <<"name">> := Name}) ->
+    try
+        case erlkoenig_nft:list_set(Name) of
+            {ok, Data} ->
+                #{<<"ok">> => true, <<"data">> => term_to_json(Data)};
+            {error, Reason} ->
+                #{<<"ok">> => false, <<"error">> => iolist_to_binary(
+                    io_lib:format("~p", [Reason]))}
+        end
+    catch _:E ->
+        logger:warning("API list_set error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"list_counters">>}) ->
+    try
+        Data = erlkoenig_nft:list_counters(),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
+    catch _:E ->
+        logger:warning("API list_counters error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"add_element">>, <<"set">> := Set, <<"value">> := Value}) ->
+    try
+        case erlkoenig_nft:add_element(Set, Value) of
+            ok -> #{<<"ok">> => true};
+            {error, Reason} ->
+                #{<<"ok">> => false, <<"error">> => iolist_to_binary(
+                    io_lib:format("~p", [Reason]))}
+        end
+    catch _:E ->
+        logger:warning("API add_element error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"add element failed">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"top">>, <<"n">> := N}) when is_integer(N), N > 0 ->
+    try
+        Sources = erlkoenig_nft:ct_top(N),
+        TotalConns = erlkoenig_nft:ct_count(),
+        Mode = erlkoenig_nft:ct_mode(),
+        Data = #{<<"sources">> => term_to_json(Sources),
+                 <<"total">> => TotalConns,
+                 <<"mode">> => atom_to_binary(Mode)},
+        #{<<"ok">> => true, <<"data">> => Data}
+    catch _:E ->
+        logger:warning("API top error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+dispatch(#{<<"cmd">> := <<"top">>}) ->
+    try
+        Sources = erlkoenig_nft:ct_top(10),
+        TotalConns = erlkoenig_nft:ct_count(),
+        Mode = erlkoenig_nft:ct_mode(),
+        Data = #{<<"sources">> => term_to_json(Sources),
+                 <<"total">> => TotalConns,
+                 <<"mode">> => atom_to_binary(Mode)},
+        #{<<"ok">> => true, <<"data">> => Data}
+    catch _:E ->
+        logger:warning("API top error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"audit_log">>, <<"n">> := N}) when is_integer(N), N > 0 ->
+    try
+        Data = erlkoenig_nft:audit_log(N),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
+    catch _:E ->
+        logger:warning("API audit_log error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+dispatch(#{<<"cmd">> := <<"audit_log">>}) ->
+    try
+        Data = erlkoenig_nft:audit_log(100),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
+    catch _:E ->
+        logger:warning("API audit_log error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"diff_live">>}) ->
+    try
+        Data = erlkoenig_nft:diff_live(),
+        #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
+    catch _:E ->
+        logger:warning("API diff_live error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    end;
+
+dispatch(#{<<"cmd">> := <<"del_element">>, <<"set">> := Set, <<"value">> := Value}) ->
+    try
+        case erlkoenig_nft:del_element(Set, Value) of
+            ok -> #{<<"ok">> => true};
+            {error, Reason} ->
+                #{<<"ok">> => false, <<"error">> => iolist_to_binary(
+                    io_lib:format("~p", [Reason]))}
+        end
+    catch _:E ->
+        logger:warning("API del_element error: ~p", [E]),
+        #{<<"ok">> => false, <<"error">> => <<"delete element failed">>}
     end;
 
 dispatch(#{<<"cmd">> := _}) ->

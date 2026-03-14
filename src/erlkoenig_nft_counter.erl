@@ -72,8 +72,11 @@ Threshold alerts:
     timer_ref  := reference() | undefined,
     prev_pkts  := non_neg_integer(),
     prev_bytes := non_neg_integer(),
-    last_rate  := map()
+    last_rate  := map(),
+    history    := [float()]
 }.
+
+-define(HISTORY_LEN, 20).
 
 %% --- Constants ---
 
@@ -115,7 +118,9 @@ init(Config) ->
         prev_bytes => PrevBytes,
         last_rate  => #{name => Name, packets => 0, bytes => 0,
                         total_packets => PrevPkts, total_bytes => PrevBytes,
-                        pps => 0.0, bps => 0.0, interval => Interval}
+                        pps => 0.0, bps => 0.0, interval => Interval,
+                        history => []},
+        history    => []
     }}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -134,22 +139,26 @@ handle_info(poll, #{name := Name, family := Family,
                     table := Table, interval := Interval,
                     thresholds := Thresholds,
                     prev_pkts := PrevPkts,
-                    prev_bytes := PrevBytes} = State) ->
+                    prev_bytes := PrevBytes,
+                    history := History} = State) ->
     case nfnl_server:get_counter(erlkoenig_nft_srv, Family, Table, Name) of
         {ok, #{packets := CurPkts, bytes := CurBytes}} ->
             %% Delta since last poll
             DeltaPkts  = max(0, CurPkts - PrevPkts),
             DeltaBytes = max(0, CurBytes - PrevBytes),
             IntervalSec = Interval / 1000.0,
+            Pps = DeltaPkts / IntervalSec,
+            NewHistory = lists:sublist([Pps | History], ?HISTORY_LEN),
             Rate = #{
                 name          => Name,
                 packets       => DeltaPkts,
                 bytes         => DeltaBytes,
                 total_packets => CurPkts,
                 total_bytes   => CurBytes,
-                pps           => DeltaPkts / IntervalSec,
+                pps           => Pps,
                 bps           => DeltaBytes / IntervalSec,
-                interval      => Interval
+                interval      => Interval,
+                history       => lists:reverse(NewHistory)
             },
             broadcast({counter_event, Name, Rate}),
             check_thresholds(Name, Thresholds, Rate),
@@ -157,7 +166,8 @@ handle_info(poll, #{name := Name, family := Family,
             {noreply, State#{timer_ref => TimerRef,
                              prev_pkts => CurPkts,
                              prev_bytes => CurBytes,
-                             last_rate => Rate}};
+                             last_rate => Rate,
+                             history => NewHistory}};
         {error, Reason} ->
             logger:warning("[erlkoenig_nft_counter:~s] poll failed: ~p", [Name, Reason]),
             TimerRef = erlang:send_after(Interval, self(), poll),

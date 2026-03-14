@@ -43,7 +43,14 @@ calling this module directly.
          unban/1,
          rates/0,
          status/0,
-         reload/0]).
+         reload/0,
+         list_chains/0,
+         list_sets/0,
+         list_set/1,
+         list_counters/0,
+         add_element/2,
+         del_element/2,
+         diff_live/0]).
 
 -export([init/1,
          handle_call/3,
@@ -126,6 +133,41 @@ state lives in the kernel).
 reload() ->
     gen_server:call(?MODULE, reload, 10000).
 
+-doc "List chains with hook, type, policy, and rule count.".
+-spec list_chains() -> [map()].
+list_chains() ->
+    gen_server:call(?MODULE, list_chains).
+
+-doc "List named sets with their types.".
+-spec list_sets() -> [map()].
+list_sets() ->
+    gen_server:call(?MODULE, list_sets).
+
+-doc "Show elements of a named set.".
+-spec list_set(binary() | string()) -> {ok, map()} | {error, term()}.
+list_set(Name) ->
+    gen_server:call(?MODULE, {list_set, ensure_binary(Name)}).
+
+-doc "List counters with current rate values.".
+-spec list_counters() -> [map()].
+list_counters() ->
+    gen_server:call(?MODULE, list_counters).
+
+-doc "Add an element to a named set.".
+-spec add_element(binary() | string(), binary() | string()) -> ok | {error, term()}.
+add_element(SetName, Value) ->
+    gen_server:call(?MODULE, {add_element, ensure_binary(SetName), Value}).
+
+-doc "Delete an element from a named set.".
+-spec del_element(binary() | string(), binary() | string()) -> ok | {error, term()}.
+del_element(SetName, Value) ->
+    gen_server:call(?MODULE, {del_element, ensure_binary(SetName), Value}).
+
+-doc "Compare running kernel state against config. Returns a list of diffs.".
+-spec diff_live() -> [map()].
+diff_live() ->
+    gen_server:call(?MODULE, diff_live, 10000).
+
 %% --- gen_server callbacks ---
 
 -spec init(map()) -> {ok, state()} | {stop, term()}.
@@ -206,6 +248,70 @@ handle_call(reload, _From, #{table := OldTable} = State) ->
         {error, _} = Err ->
             {reply, Err, State}
     end;
+
+handle_call(list_chains, _From, #{config := Config} = State) ->
+    Chains = maps:get(chains, Config, []),
+    Result = [#{
+        name => maps:get(name, C),
+        hook => maps:get(hook, C),
+        type => maps:get(type, C, filter),
+        priority => maps:get(priority, C, 0),
+        policy => maps:get(policy, C, accept),
+        rules => length(maps:get(rules, C, []))
+    } || C <- Chains],
+    {reply, Result, State};
+
+handle_call(list_sets, _From, #{config := Config} = State) ->
+    Sets = maps:get(sets, Config, []),
+    Result = [format_set_info(S) || S <- Sets],
+    {reply, Result, State};
+
+handle_call({list_set, Name}, _From, #{config := Config} = State) ->
+    Sets = maps:get(sets, Config, []),
+    Table = maps:get(table, Config),
+    case find_set_by_name(Sets, Name) of
+        {ok, SetSpec} ->
+            Info = format_set_info(SetSpec),
+            %% Try to get live kernel elements via netlink GET
+            LiveElems = case nfnl_server:list_set_elems(
+                    erlkoenig_nft_srv, ?INET, Table, Name) of
+                {ok, Elems} -> Elems;
+                {error, _} -> []
+            end,
+            ConfigElems = case SetSpec of
+                {_, _, #{elements := CE}} -> CE;
+                _ -> []
+            end,
+            {reply, {ok, Info#{elements => LiveElems,
+                               config_elements => ConfigElems}}, State};
+        error ->
+            {reply, {error, {no_such_set, Name}}, State}
+    end;
+
+handle_call(list_counters, _From, #{config := Config} = State) ->
+    Counters = maps:get(counters, Config, []),
+    Rates = collect_rates(),
+    Result = [begin
+        CName = counter_name(C),
+        Rate = maps:get(CName, Rates, #{}),
+        #{name => CName,
+          packets => maps:get(packets, Rate, 0),
+          bytes => maps:get(bytes, Rate, 0),
+          pps => maps:get(pps, Rate, 0)}
+    end || C <- Counters],
+    {reply, Result, State};
+
+handle_call({add_element, SetName, Value}, _From, #{config := Config} = State) ->
+    Result = do_set_elem_op(Config, SetName, Value, add),
+    {reply, Result, State};
+
+handle_call({del_element, SetName, Value}, _From, #{config := Config} = State) ->
+    Result = do_set_elem_op(Config, SetName, Value, del),
+    {reply, Result, State};
+
+handle_call(diff_live, _From, #{config := Config} = State) ->
+    Result = compute_diff(Config),
+    {reply, Result, State};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
@@ -494,6 +600,128 @@ build_thresholds(CounterName, Thresholds) ->
                 false
         end
     end, Thresholds).
+
+%% --- Internal: Diff live ---
+
+-spec compute_diff(map()) -> [map()].
+compute_diff(Config) ->
+    Table = maps:get(table, Config),
+    ConfigChains = [maps:get(name, C) || C <- maps:get(chains, Config, [])],
+    ConfigSets = [set_name(S) || S <- maps:get(sets, Config, []),
+                  set_name(S) =/= undefined],
+
+    %% Query kernel for chains
+    KernelChains = case nfnl_server:list_chains(erlkoenig_nft_srv, ?INET, Table) of
+        {ok, KC} -> [maps:get(name, C, undefined) || C <- KC];
+        {error, _} -> []
+    end,
+
+    %% Chain diffs
+    ChainDiffs = chain_diffs(ConfigChains, KernelChains),
+
+    %% Set element diffs
+    SetDiffs = lists:flatmap(fun(SetName) ->
+        ConfigCount = case lists:keyfind(SetName, 1,
+                [{set_name(S), S} || S <- maps:get(sets, Config, [])]) of
+            {_, {_, _, #{elements := Elems}}} -> length(Elems);
+            _ -> 0
+        end,
+        KernelCount = case nfnl_server:list_set_elems(
+                erlkoenig_nft_srv, ?INET, Table, SetName) of
+            {ok, KE} -> length(KE);
+            {error, _} -> -1
+        end,
+        if
+            KernelCount =:= -1 ->
+                [#{type => missing_set, set => SetName,
+                   detail => <<"set not found in kernel">>}];
+            KernelCount =/= ConfigCount ->
+                [#{type => set_elements, set => SetName,
+                   config_count => ConfigCount, kernel_count => KernelCount}];
+            true ->
+                []
+        end
+    end, ConfigSets),
+
+    ChainDiffs ++ SetDiffs.
+
+-spec chain_diffs([binary()], [binary()]) -> [map()].
+chain_diffs(ConfigChains, KernelChains) ->
+    Missing = [#{type => missing_chain, chain => C,
+                 detail => <<"in config but not in kernel">>}
+               || C <- ConfigChains, not lists:member(C, KernelChains)],
+    Extra = [#{type => extra_chain, chain => C,
+               detail => <<"in kernel but not in config">>}
+             || C <- KernelChains, not lists:member(C, ConfigChains)],
+    Missing ++ Extra.
+
+%% --- Internal: Set element operations ---
+
+-spec do_set_elem_op(map(), binary(), binary() | string(), add | del) ->
+    ok | {error, term()}.
+do_set_elem_op(Config, SetName, Value, Op) ->
+    Sets = maps:get(sets, Config, []),
+    case find_set_by_name(Sets, SetName) of
+        {ok, SetSpec} ->
+            Type = set_type(SetSpec),
+            case normalize_value(Value, Type) of
+                {ok, Bin} ->
+                    Table = maps:get(table, Config),
+                    MsgFun = case Op of
+                        add -> fun(S) -> nft_set_elem:add(?INET, Table, SetName, Bin, S) end;
+                        del -> fun(S) -> nft_set_elem:del(?INET, Table, SetName, Bin, S) end
+                    end,
+                    nfnl_server:apply_msgs(erlkoenig_nft_srv, [MsgFun]);
+                {error, _} = Err ->
+                    Err
+            end;
+        error ->
+            {error, {no_such_set, SetName}}
+    end.
+
+-spec find_set_by_name([tuple()], binary()) -> {ok, tuple()} | error.
+find_set_by_name([], _Name) -> error;
+find_set_by_name([S | Rest], Name) ->
+    case set_name(S) of
+        Name -> {ok, S};
+        _ -> find_set_by_name(Rest, Name)
+    end.
+
+-spec format_set_info(tuple()) -> map().
+format_set_info({Name, Type}) ->
+    #{name => Name, type => Type};
+format_set_info({Name, Type, Opts}) ->
+    Base = #{name => Name, type => Type},
+    case maps:get(flags, Opts, undefined) of
+        undefined -> Base;
+        Flags -> Base#{flags => Flags}
+    end.
+
+-spec normalize_value(binary() | string(), atom()) -> {ok, binary()} | {error, term()}.
+normalize_value(Value, ipv4_addr) ->
+    erlkoenig_nft_ip:normalize(Value);
+normalize_value(Value, ipv6_addr) ->
+    erlkoenig_nft_ip:normalize(Value);
+normalize_value(Value, inet_service) ->
+    try
+        Port = case Value of
+            V when is_binary(V) -> binary_to_integer(V);
+            V when is_list(V) -> list_to_integer(V);
+            V when is_integer(V) -> V
+        end,
+        case Port >= 0 andalso Port =< 65535 of
+            true -> {ok, <<Port:16/big>>};
+            false -> {error, {invalid_port, Value}}
+        end
+    catch _:_ ->
+        {error, {invalid_port, Value}}
+    end;
+normalize_value(Value, _Type) when is_binary(Value) ->
+    {ok, Value};
+normalize_value(Value, _Type) when is_list(Value) ->
+    {ok, list_to_binary(Value)};
+normalize_value(Value, _Type) ->
+    {error, {cannot_normalize, Value}}.
 
 %% --- Internal: Helpers ---
 

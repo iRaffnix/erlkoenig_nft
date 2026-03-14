@@ -282,15 +282,15 @@ if [ -f "$PREFIX/bin/erlkoenig" ]; then
     # Use the newest erts directory (in case old ones linger)
     ERTS_DIR=$(ls -dt "$PREFIX"/erts-* 2>/dev/null | head -1)
     if [ -n "$ERTS_DIR" ]; then
-        cat > /usr/local/bin/erlkoenig <<WRAPPER
+        cat > /usr/local/bin/erlkoenig-nft <<WRAPPER
 #!/bin/sh
 exec "$ERTS_DIR/bin/escript" "$PREFIX/bin/erlkoenig" "\$@"
 WRAPPER
-        chmod +x /usr/local/bin/erlkoenig
-        ok "CLI: /usr/local/bin/erlkoenig (using bundled ERTS)"
+        chmod +x /usr/local/bin/erlkoenig-nft
+        ok "CLI: /usr/local/bin/erlkoenig-nft (using bundled ERTS)"
     else
-        ln -sf "$PREFIX/bin/erlkoenig" /usr/local/bin/erlkoenig
-        ok "CLI: /usr/local/bin/erlkoenig (requires system Erlang)"
+        ln -sf "$PREFIX/bin/erlkoenig" /usr/local/bin/erlkoenig-nft
+        ok "CLI: /usr/local/bin/erlkoenig-nft (requires system Erlang)"
     fi
 fi
 
@@ -306,9 +306,9 @@ fi
 # --- Install shell completions ---
 
 COMPLETIONS_INSTALLED=false
-if [ -d /etc/bash_completion.d ] && [ -x /usr/local/bin/erlkoenig ]; then
-    /usr/local/bin/erlkoenig completions bash > /etc/bash_completion.d/erlkoenig 2>/dev/null && \
-        COMPLETIONS_INSTALLED=true && ok "Bash completions: /etc/bash_completion.d/erlkoenig"
+if [ -d /etc/bash_completion.d ] && [ -x /usr/local/bin/erlkoenig-nft ]; then
+    /usr/local/bin/erlkoenig-nft completions bash > /etc/bash_completion.d/erlkoenig-nft 2>/dev/null && \
+        COMPLETIONS_INSTALLED=true && ok "Bash completions: /etc/bash_completion.d/erlkoenig-nft"
 fi
 
 # --- Generate cookie (first install only) ---
@@ -359,11 +359,11 @@ echo "  Verify:    sudo nft list ruleset"
 echo ""
 echo "  Config:    ${PREFIX}/etc/firewall.term"
 echo "  Examples:  erlkoenig examples"
-echo "  CLI:       erlkoenig --help"
+echo "  CLI:       erlkoenig-nft --help"
 if [ "$COMPLETIONS_INSTALLED" = true ]; then
     echo ""
-    echo "  Completions: /etc/bash_completion.d/erlkoenig"
-    echo "  Activate:    source /etc/bash_completion.d/erlkoenig"
+    echo "  Completions: /etc/bash_completion.d/erlkoenig-nft"
+    echo "  Activate:    source /etc/bash_completion.d/erlkoenig-nft"
 fi
 if [ "$IS_UPDATE" = false ]; then
     echo ""

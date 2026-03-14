@@ -1,7 +1,6 @@
 #!/bin/sh
 # erlkoenig_nft installer / updater
-# Usage: curl -fsSL https://raw.githubusercontent.com/iRaffnix/erlkoenig_nft/main/install.sh | sudo sh
-#    or: sudo sh install.sh [--prefix /opt/erlkoenig_nft] [--version v0.6.0] [--no-systemd] [--force]
+# Usage: sudo sh install.sh --version v0.6.0 [--prefix /opt/erlkoenig_nft] [--no-systemd] [--force]
 set -eu
 
 REPO="iRaffnix/erlkoenig_nft"
@@ -19,13 +18,16 @@ while [ $# -gt 0 ]; do
         --no-systemd)  INSTALL_SYSTEMD=false; shift ;;
         --force)       FORCE=true; shift ;;
         -h|--help)
-            echo "Usage: install.sh [--prefix DIR] [--version vX.Y.Z] [--no-systemd] [--force]"
+            echo "Usage: install.sh --version vX.Y.Z [--prefix DIR] [--no-systemd] [--force]"
             echo ""
             echo "Options:"
+            echo "  --version vX.Y.Z  Version to install (required)"
             echo "  --prefix DIR      Installation directory (default: /opt/erlkoenig_nft)"
-            echo "  --version vX.Y.Z  Install specific version (default: latest)"
             echo "  --no-systemd      Skip systemd unit installation"
             echo "  --force           Force reinstall even if same version"
+            echo ""
+            echo "Example:"
+            echo "  sudo sh install.sh --version v0.6.0"
             exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -61,16 +63,6 @@ detect_target() {
     echo "${arch}-${libc}"
 }
 
-# --- Detect latest version from GitHub ---
-
-detect_version() {
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL -o /dev/null -w '%{redirect_url}' \
-            "https://github.com/${REPO}/releases/latest" 2>/dev/null \
-            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || true
-    fi
-}
-
 # --- Read currently installed version ---
 
 installed_version() {
@@ -99,10 +91,11 @@ stop_daemon() {
     info "Stopping erlkoenig_nft daemon ..."
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet erlkoenig_nft 2>/dev/null; then
         systemctl stop erlkoenig_nft 2>/dev/null || true
-    else
-        # Kill beam process directly (no erl_call needed)
-        pkill -f "erlkoenig_nft.*beam" 2>/dev/null || true
     fi
+    # Also kill any orphan beam processes (e.g. started via relx `start`)
+    pkill -f "erlkoenig_nft.*beam" 2>/dev/null || true
+    # Kill epmd name reservation so the new instance can register
+    epmd -names 2>/dev/null | grep -q erlkoenig_nft && epmd -stop erlkoenig_nft 2>/dev/null || true
     # Wait for clean shutdown (up to 10s)
     i=0
     while [ $i -lt 10 ]; do
@@ -113,25 +106,31 @@ stop_daemon() {
         sleep 1
         i=$((i + 1))
     done
-    warn "Daemon did not stop within 10s, continuing anyway"
+    # Force kill if still alive
+    pkill -9 -f "erlkoenig_nft.*beam" 2>/dev/null || true
+    pkill -9 epmd 2>/dev/null || true
+    sleep 1
+    ok "Daemon stopped (forced)"
 }
 
 # --- Start daemon ---
 
 start_daemon() {
     info "Starting erlkoenig_nft daemon ..."
+    # Ensure epmd name is free before starting
+    epmd -stop erlkoenig_nft 2>/dev/null || true
+    sleep 1
     if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/erlkoenig_nft.service ]; then
         systemctl start erlkoenig_nft
     else
-        # Start via the run script (no distribution, foreground-safe)
         "$PREFIX/dist/erlkoenig_nft_run" &
     fi
     # Verify it started
-    sleep 2
+    sleep 3
     if daemon_is_running; then
         ok "Daemon started"
     else
-        warn "Daemon may not have started — check: systemctl status erlkoenig_nft"
+        warn "Daemon may not have started — check: journalctl -u erlkoenig_nft -n 20"
     fi
 }
 
@@ -152,10 +151,9 @@ fi
 TARGET=$(detect_target)
 
 if [ -z "$VERSION" ]; then
-    VERSION=$(detect_version)
-fi
-if [ -z "$VERSION" ]; then
-    err "Could not detect latest version. Use --version vX.Y.Z"
+    err "--version is required"
+    echo "  Usage: sudo sh install.sh --version vX.Y.Z" >&2
+    echo "  Releases: https://github.com/${REPO}/releases" >&2
     exit 1
 fi
 
@@ -281,7 +279,8 @@ mkdir -p "$PREFIX/etc"
 
 ERTS_DIR=""
 if [ -f "$PREFIX/bin/erlkoenig" ]; then
-    ERTS_DIR=$(ls -d "$PREFIX"/erts-* 2>/dev/null | head -1)
+    # Use the newest erts directory (in case old ones linger)
+    ERTS_DIR=$(ls -dt "$PREFIX"/erts-* 2>/dev/null | head -1)
     if [ -n "$ERTS_DIR" ]; then
         cat > /usr/local/bin/erlkoenig <<WRAPPER
 #!/bin/sh
@@ -302,6 +301,14 @@ if [ "$INSTALL_SYSTEMD" = true ] && [ -d /etc/systemd/system ]; then
         > /etc/systemd/system/erlkoenig_nft.service
     systemctl daemon-reload
     ok "Systemd unit: erlkoenig_nft.service"
+fi
+
+# --- Install shell completions ---
+
+COMPLETIONS_INSTALLED=false
+if [ -d /etc/bash_completion.d ] && [ -x /usr/local/bin/erlkoenig ]; then
+    /usr/local/bin/erlkoenig completions bash > /etc/bash_completion.d/erlkoenig 2>/dev/null && \
+        COMPLETIONS_INSTALLED=true && ok "Bash completions: /etc/bash_completion.d/erlkoenig"
 fi
 
 # --- Generate cookie (first install only) ---
@@ -351,8 +358,13 @@ echo "  Enable:    sudo systemctl enable erlkoenig_nft"
 echo "  Verify:    sudo nft list ruleset"
 echo ""
 echo "  Config:    ${PREFIX}/etc/firewall.term"
-echo "  Examples:  ${PREFIX}/examples/"
+echo "  Examples:  erlkoenig examples"
 echo "  CLI:       erlkoenig --help"
+if [ "$COMPLETIONS_INSTALLED" = true ]; then
+    echo ""
+    echo "  Completions: /etc/bash_completion.d/erlkoenig"
+    echo "  Activate:    source /etc/bash_completion.d/erlkoenig"
+fi
 if [ "$IS_UPDATE" = false ]; then
     echo ""
     echo "  WARNING: Test in a VM first. See README for safety notes."

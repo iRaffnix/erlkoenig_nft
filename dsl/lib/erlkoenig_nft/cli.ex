@@ -248,7 +248,12 @@ defmodule ErlkoenigNft.CLI do
     case config["sets"] do
       sets when is_list(sets) ->
         for s <- sets do
-          IO.puts("  set #{color(:cyan, s["name"] || List.first(s))} { type #{s["type"] || Enum.at(s, 1)} }")
+          {name, type} = case s do
+            %{"name" => n, "type" => t} -> {n, t}
+            [n, t | _] -> {n, t}
+            _ -> {inspect(s), "?"}
+          end
+          IO.puts("  set #{color(:cyan, name)} { type #{type} }")
         end
       _ -> :ok
     end
@@ -266,8 +271,13 @@ defmodule ErlkoenigNft.CLI do
     header("sets")
 
     for s <- data do
-      flags = if s["flags"], do: " [#{inspect(s["flags"])}]", else: ""
-      IO.puts("  #{color(:cyan, s["name"])} type #{s["type"]}#{flags}")
+      {name, type, flags} = case s do
+        %{"name" => n, "type" => t} -> {n, t, s["flags"]}
+        [n, t | _] -> {n, t, nil}
+        _ -> {inspect(s), "?", nil}
+      end
+      flags_str = if flags, do: " [#{inspect(flags)}]", else: ""
+      IO.puts("  #{color(:cyan, name)} type #{type}#{flags_str}")
     end
   end
 
@@ -788,11 +798,19 @@ defmodule ErlkoenigNft.CLI do
   defp parse_opts([], opts, files), do: {opts, files}
 
   defp find_examples_dir do
+    # Resolve relative to the escript location (e.g. /opt/erlkoenig_nft/bin/erlkoenig)
+    escript_dir = case :escript.script_name() |> to_string() |> Path.dirname() do
+      "." -> nil
+      dir -> dir
+    end
+
     candidates = [
       "examples",
       "../examples",
+      (if escript_dir, do: Path.join(escript_dir, "../examples")),
+      "/opt/erlkoenig_nft/examples",
       Path.join(:code.priv_dir(:erlkoenig_nft_dsl) |> to_string(), "../examples")
-    ]
+    ] |> Enum.reject(&is_nil/1)
 
     Enum.find(candidates, &File.dir?/1)
   end

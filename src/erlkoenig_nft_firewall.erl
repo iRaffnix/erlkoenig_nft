@@ -251,14 +251,19 @@ handle_call(reload, _From, #{table := OldTable} = State) ->
 
 handle_call(list_chains, _From, #{config := Config} = State) ->
     Chains = maps:get(chains, Config, []),
-    Result = [#{
-        name => maps:get(name, C),
-        hook => maps:get(hook, C),
-        type => maps:get(type, C, filter),
-        priority => maps:get(priority, C, 0),
-        policy => maps:get(policy, C, accept),
-        rules => length(maps:get(rules, C, []))
-    } || C <- Chains],
+    Result = [case maps:is_key(hook, C) of
+        true ->
+            #{name => maps:get(name, C),
+              hook => maps:get(hook, C),
+              type => maps:get(type, C, filter),
+              priority => maps:get(priority, C, 0),
+              policy => maps:get(policy, C, accept),
+              rules => length(maps:get(rules, C, []))};
+        false ->
+            #{name => maps:get(name, C),
+              type => regular,
+              rules => length(maps:get(rules, C, []))}
+    end || C <- Chains],
     {reply, Result, State};
 
 handle_call(list_sets, _From, #{config := Config} = State) ->
@@ -440,17 +445,24 @@ start_counters(Config) ->
 -spec build_chain(binary(), map(), map()) -> [fun()].
 build_chain(Table, ChainConfig, Config) ->
     Name     = maps:get(name, ChainConfig),
-    Hook     = maps:get(hook, ChainConfig),
-    Type     = maps:get(type, ChainConfig, filter),
-    Priority = maps:get(priority, ChainConfig, 0),
-    Policy   = maps:get(policy, ChainConfig, accept),
     Rules    = maps:get(rules, ChainConfig, []),
 
-    ChainMsg = fun(S) -> nft_chain:add(?INET, #{
-        table => Table, name => Name,
-        hook => Hook, type => Type,
-        priority => Priority, policy => Policy
-    }, S) end,
+    ChainMsg = case maps:is_key(hook, ChainConfig) of
+        true ->
+            Hook     = maps:get(hook, ChainConfig),
+            Type     = maps:get(type, ChainConfig, filter),
+            Priority = maps:get(priority, ChainConfig, 0),
+            Policy   = maps:get(policy, ChainConfig, accept),
+            fun(S) -> nft_chain:add(?INET, #{
+                table => Table, name => Name,
+                hook => Hook, type => Type,
+                priority => Priority, policy => Policy
+            }, S) end;
+        false ->
+            fun(S) -> nft_chain:add_regular(?INET, #{
+                table => Table, name => Name
+            }, S) end
+    end,
 
     RuleMsgs = lists:flatten([build_rule(Table, Name, Rule, Config) || Rule <- Rules]),
     [ChainMsg | RuleMsgs].
@@ -565,6 +577,29 @@ build_rule(Table, Chain, forward_established, _Config) ->
 %% NAT: masquerade outgoing traffic
 build_rule(Table, Chain, masq, _Config) ->
     encode_rule(Table, Chain, nft_rules:masq_rule());
+
+%% Jump to chain on input interface
+build_rule(Table, Chain, {iifname_jump, Name, Target}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:iifname_jump(
+        ensure_binary(Name), ensure_binary(Target)));
+
+%% Accept on output interface
+build_rule(Table, Chain, {oifname_accept, Name}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:oifname_accept(ensure_binary(Name)));
+
+%% Masquerade on output interface != Name
+build_rule(Table, Chain, {oifname_neq_masq, Name}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:oifname_neq_masq(ensure_binary(Name)));
+
+%% Jump on input+output interface pair
+build_rule(Table, Chain, {iifname_oifname_jump, InIf, OutIf, Target}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:iifname_oifname_jump(
+        ensure_binary(InIf), ensure_binary(OutIf), ensure_binary(Target)));
+
+%% Masquerade on input+output interface pair
+build_rule(Table, Chain, {iifname_oifname_masq, InIf, OutIf}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:iifname_oifname_masq(
+        ensure_binary(InIf), ensure_binary(OutIf)));
 
 %% Verdict map dispatch
 build_rule(Table, Chain, {vmap_dispatch, Proto, VmapName}, _Config) ->

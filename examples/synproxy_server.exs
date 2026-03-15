@@ -30,7 +30,7 @@ defmodule Firewall.SynproxyServer do
       accept :loopback
 
       # Drop spoofed source addresses (FIB reverse-path check)
-      rpf_check
+      rpf_check()
 
       # Kernel validates TCP handshake via SYN cookies
       # before passing the connection to the application

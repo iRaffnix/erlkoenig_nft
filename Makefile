@@ -108,7 +108,7 @@ endif
 ##         make tag VERSION=0.6.0 MSG="Release notes here"
 
 CURRENT_VERSION = $(shell grep -oP '(?<=\{release, \{erlkoenig_nft, ")[^"]+' rebar.config)
-VERSION_FILES = rebar.config dsl/mix.exs install.sh
+VERSION_FILES = rebar.config src/erlkoenig_nft.app.src dsl/mix.exs install.sh
 
 tag:
 ifndef VERSION
@@ -116,6 +116,12 @@ ifndef VERSION
 endif
 	@if ! echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
 		echo "Error: VERSION must be semver (e.g., 0.6.0)" >&2; exit 1; \
+	fi
+	@BRANCH=$$(git branch --show-current); \
+	if [ "$$BRANCH" != "main" ]; then \
+		echo "Error: tags are only allowed from main (currently on $$BRANCH)" >&2; \
+		echo "  git checkout main && git merge $$BRANCH && make tag VERSION=$(VERSION)" >&2; \
+		exit 1; \
 	fi
 	@if [ -n "$$(git status --porcelain)" ]; then \
 		echo "Error: working tree is dirty — commit or stash first" >&2; exit 1; \
@@ -125,6 +131,7 @@ endif
 	fi
 	@echo "Bumping version: $(CURRENT_VERSION) -> $(VERSION)"
 	sed -i 's/{release, {erlkoenig_nft, "[^"]*"}/{release, {erlkoenig_nft, "$(VERSION)"}/' rebar.config
+	sed -i 's/{vsn, "[^"]*"}/{vsn, "$(VERSION)"}/' src/erlkoenig_nft.app.src
 	sed -i 's/version: "[^"]*"/version: "$(VERSION)"/' dsl/mix.exs
 	sed -i 's/--version v[0-9]*\.[0-9]*\.[0-9]*/--version v$(VERSION)/' install.sh
 	git add $(VERSION_FILES)
@@ -132,7 +139,7 @@ endif
 	git tag -a "v$(VERSION)" -m "$(if $(MSG),$(MSG),v$(VERSION))"
 	@echo ""
 	@echo "Tagged v$(VERSION). Push with:"
-	@echo "  git push origin $$(git branch --show-current) v$(VERSION)"
+	@echo "  git push origin main v$(VERSION)"
 
 ## Clean ---------------------------------------------------------------
 

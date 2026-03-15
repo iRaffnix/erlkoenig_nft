@@ -157,6 +157,84 @@ end
 | `type` | atom | `:filter` | `:filter`, `:nat`, `:route` |
 | `priority` | integer | `0` | Lower = evaluated earlier |
 
+## Zones
+
+Zones group interfaces and define inter-zone policies. At compile time,
+zone macros expand into standard chains (`z_dispatch_input`, `z_input_<zone>`,
+`z_dispatch_forward`, `z_fwd_<from>_<to>`, `z_nat_postrouting`) — the
+Erlang runtime sees only normal chains and rules.
+
+### Zone Definitions
+
+```elixir
+zone "wan", interfaces: ["eth0"]
+zone "lan", interfaces: ["eth1", "br0"]
+zone "vpn", interfaces: ["wg0"]
+```
+
+Each interface may only belong to one zone.
+
+### Zone Input (traffic to this host)
+
+```elixir
+zone_input "wan", policy: :drop do
+  accept :established
+  accept :icmp
+  accept_tcp 22, counter: :ssh, limit: {10, burst: 3}
+  log_and_drop "WAN-DROP: ", counter: :dropped
+end
+
+zone_input "lan", policy: :accept do
+  accept :established
+end
+```
+
+With `policy: :accept`, an implicit `accept` is appended. With `:drop`, the
+chain ends after your rules (unmatched packets return to the dispatch chain
+which has policy drop).
+
+### Zone Forward (traffic between zones)
+
+```elixir
+zone_forward "lan", to: "wan", policy: :accept do
+  accept :established
+  accept :all
+end
+
+zone_forward "wan", to: "lan", policy: :drop do
+  accept :established
+end
+```
+
+For multi-interface zones, all interface combinations generate
+`iifname`+`oifname` jump rules automatically.
+
+### Zone Masquerade (NAT between zones)
+
+```elixir
+zone_masquerade "lan", to: "wan"
+```
+
+Generates a `z_nat_postrouting` chain (type nat, hook postrouting,
+priority 100) with per-interface-pair masquerade rules.
+
+### Coexistence with Manual Chains
+
+Zone chains and manual `chain` blocks coexist — zone chains get a `z_` prefix
+to avoid collisions. Zone chains are placed before manual chains in the output.
+
+### Interface Macros
+
+These macros can be used inside manual chains for direct interface matching:
+
+```elixir
+accept_on_interface "wg0"       # accept if iifname matches
+accept_output_interface "eth0"  # accept if oifname matches
+masquerade()                    # masquerade (dynamic SNAT)
+masquerade_not_via "wg0"        # masquerade if oifname != name
+accept_forward_established()    # accept established/related in forward
+```
+
 ## Rule Macros
 
 ### Connection Tracking

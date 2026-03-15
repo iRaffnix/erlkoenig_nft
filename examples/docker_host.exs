@@ -3,8 +3,16 @@
 # Docker / Container Host
 #
 # Host running containers with published port ranges.
-# Bridge network traffic trusted. Container ports exposed.
-# Multi-chain: input + forward + postrouting NAT.
+# Zone-based: external traffic is filtered, Docker bridge is trusted.
+#
+# Zones:
+#   ext     (eth0)    — internet-facing, strict inbound
+#   docker  (docker0) — Docker bridge network, trusted
+#
+# Traffic flow:
+#   ext -> host:  SSH + container-exposed ports only
+#   docker -> ext: allowed + masqueraded (containers reach internet)
+#   ext -> docker: only established (no direct inbound to containers)
 
 defmodule Firewall.DockerHost do
   use ErlkoenigNft.Firewall
@@ -14,15 +22,16 @@ defmodule Firewall.DockerHost do
     set "blocklist", :ipv4_addr
     set "blocklist6", :ipv6_addr
 
-    chain "prerouting_ban", hook: :prerouting, priority: -300, policy: :accept do
-      drop_if_in_set "blocklist", counter: :banned
-      drop_if_in_set "blocklist6", counter: :banned
-    end
+    # --- Zones ---
+    zone "ext", interfaces: ["eth0"]
+    zone "docker", interfaces: ["docker0"]
 
-    chain "inbound", hook: :input, policy: :drop do
+    # --- Inbound: protect the host ---
+
+    zone_input "ext", policy: :drop do
       accept :established
-      accept :loopback
-      # Trust docker bridge (iifname_accept requires term-level for named ifaces)
+      accept :icmp
+      accept_protocol :icmpv6
       accept_tcp 22, counter: :ssh, limit: {10, burst: 3}
 
       # Container exposed ports
@@ -30,21 +39,34 @@ defmodule Firewall.DockerHost do
       accept_tcp_range 5432, 5439                       # databases
       accept_tcp_range 6379, 6380                       # Redis
 
-      accept :icmp
-      accept_protocol :icmpv6
       log_and_drop "DOCKER-DROP: ", counter: :dropped
     end
 
-    # Container routing
-    chain "forward", hook: :forward, type: :filter, policy: :drop do
+    zone_input "docker", policy: :accept do
       accept :established
-      # Trust docker bridge (requires term-level iifname_accept)
-      log_and_drop "DOCKER-FWD-DROP: "
+      accept_tcp 22
     end
 
-    # NAT for container outbound
-    chain "masq", hook: :postrouting, type: :nat, policy: :accept do
-      # masq rule requires term-level config
+    # --- Forward: containers to internet ---
+
+    zone_forward "docker", to: "ext", policy: :accept do
+      accept :established
+      accept :all
+    end
+
+    zone_forward "ext", to: "docker", policy: :drop do
+      accept :established
+    end
+
+    # --- NAT: masquerade container outbound ---
+
+    zone_masquerade "docker", to: "ext"
+
+    # --- Pre-routing: ban list ---
+
+    chain "prerouting_ban", hook: :prerouting, priority: -300, policy: :accept do
+      drop_if_in_set "blocklist", counter: :banned
+      drop_if_in_set "blocklist6", counter: :banned
     end
   end
 end

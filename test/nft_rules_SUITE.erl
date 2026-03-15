@@ -34,7 +34,12 @@ all() ->
      dnat_rule_ipv6_test,
      set_lookup_udp_accept_ipv4_test,
      set_lookup_udp_accept_ipv6_test,
-     nflog_capture_udp_test].
+     nflog_capture_udp_test,
+     iifname_jump_test,
+     oifname_accept_test,
+     oifname_neq_masq_test,
+     iifname_oifname_jump_test,
+     iifname_oifname_masq_test].
 
 ct_established_has_bitwise(_) ->
     Rule = nft_rules:ct_established_accept(),
@@ -283,6 +288,50 @@ nflog_capture_udp_test(_) ->
     ?assertNotEqual(nomatch, binary:match(Msg, <<"log">>)),
     %% Port 61820 = <<0xF1, 0x7C>>
     ?assertNotEqual(nomatch, binary:match(Msg, <<61820:16/big>>)).
+
+%% ===================================================================
+%% Interface-pair rule tests
+%% ===================================================================
+
+iifname_jump_test(_) ->
+    Rule = nft_rules:iifname_jump(<<"eth0">>, <<"input_wan">>),
+    %% 3 exprs: meta iifname, cmp, jump
+    ?assertEqual(3, length(Rule)),
+    Msg = encode_rule(Rule),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"eth0">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"immediate">>)).
+
+oifname_accept_test(_) ->
+    Rule = nft_rules:oifname_accept(<<"eth0">>),
+    ?assertEqual(3, length(Rule)),
+    Msg = encode_rule(Rule),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"eth0">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"meta">>)).
+
+oifname_neq_masq_test(_) ->
+    Rule = nft_rules:oifname_neq_masq(<<"wg0">>),
+    ?assertEqual(3, length(Rule)),
+    Msg = encode_rule(Rule),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"wg0">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"masq">>)).
+
+iifname_oifname_jump_test(_) ->
+    Rule = nft_rules:iifname_oifname_jump(<<"eth1">>, <<"eth0">>, <<"fwd_lan_wan">>),
+    %% 5 exprs: meta iifname, cmp, meta oifname, cmp, jump
+    ?assertEqual(5, length(Rule)),
+    Msg = encode_rule(Rule),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"eth1">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"eth0">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"immediate">>)).
+
+iifname_oifname_masq_test(_) ->
+    Rule = nft_rules:iifname_oifname_masq(<<"eth1">>, <<"eth0">>),
+    %% 5 exprs: meta iifname, cmp, meta oifname, cmp, masq
+    ?assertEqual(5, length(Rule)),
+    Msg = encode_rule(Rule),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"eth1">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"eth0">>)),
+    ?assertNotEqual(nomatch, binary:match(Msg, <<"masq">>)).
 
 %% --- Helpers ---
 

@@ -7,6 +7,8 @@ Type=simple
 WorkingDirectory=@@PREFIX@@
 Environment=HOME=@@PREFIX@@
 ExecStart=@@PREFIX@@/bin/erlkoenig_nft_run
+KillSignal=SIGTERM
+TimeoutStopSec=15
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
@@ -17,6 +19,8 @@ ProtectHome=yes
 PrivateTmp=yes
 ProtectClock=yes
 RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
 
 [Install]
 WantedBy=multi-user.target

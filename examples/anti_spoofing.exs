@@ -40,7 +40,7 @@ defmodule Firewall.AntiSpoofing do
       drop_if_in_set "blocklist", counter: :dropped
       # BCP38: drop packets with spoofed source addresses
       # (FIB lookup: does a route to the source exist via this iface?)
-      rpf_check
+      rpf_check()
     end
 
     # Verdict map dispatch + concat set matching
@@ -70,7 +70,7 @@ defmodule Firewall.AntiSpoofing do
     # Strict anti-spoofing for routed traffic
     chain "forward", hook: :forward, type: :filter, policy: :drop do
       accept :established
-      rpf_check
+      rpf_check()
       log_and_drop "EDGE-FWD-DROP: "
     end
   end

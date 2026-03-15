@@ -29,7 +29,8 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def new(name, opts) when is_binary(name) and is_list(opts) do
     owner = Keyword.get(opts, :owner, false)
     %{name: name, owner: owner, sets: [], vmaps: [], counters: [], quotas: [],
-      chains: [], flowtables: [], rules_acc: []}
+      chains: [], flowtables: [], rules_acc: [],
+      zones: [], zone_inputs: [], zone_forwards: [], zone_masquerades: []}
   end
 
   # --- Sets ---
@@ -101,7 +102,8 @@ defmodule ErlkoenigNft.Firewall.Builder do
 
   # --- Quotas ---
 
-  def add_quota(state, name, bytes, opts \\ []) when is_binary(name) and is_integer(bytes) do
+  def add_quota(state, name, bytes, opts \\ []) when is_integer(bytes) do
+    name = if is_atom(name), do: Atom.to_string(name), else: name
     mode = Keyword.get(opts, :mode, :until)
     flags = if mode == :over, do: 1, else: 0
     quota = %{name: name, bytes: bytes, flags: flags}
@@ -166,6 +168,10 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def ip_saddr_drop(ip), do: {:ip_saddr_drop, ip}
 
   def iifname_accept(name), do: {:iifname_accept, name}
+  def oifname_accept(name), do: {:oifname_accept, name}
+  def oifname_neq_masq(name), do: {:oifname_neq_masq, name}
+  def masquerade, do: :masq
+  def forward_established, do: :forward_established
 
   def set_lookup_drop(set_name), do: {:set_lookup_drop, set_name}
   def set_lookup_drop(set_name, counter), do: {:set_lookup_drop, set_name, to_string(counter)}
@@ -238,6 +244,25 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def drop_if_in_concat_set(set_name, fields),
     do: {:concat_set_lookup, set_name, fields, :drop}
 
+  # --- Zone accumulators ---
+
+  def add_zone(state, name, opts) when is_binary(name) do
+    interfaces = Keyword.fetch!(opts, :interfaces)
+    update_in(state, [:zones], &(&1 ++ [{name, interfaces}]))
+  end
+
+  def add_zone_input(state, zone_name, policy, rules) do
+    update_in(state, [:zone_inputs], &(&1 ++ [{zone_name, policy, rules}]))
+  end
+
+  def add_zone_forward(state, from, to, policy, rules) do
+    update_in(state, [:zone_forwards], &(&1 ++ [{from, to, policy, rules}]))
+  end
+
+  def add_zone_masquerade(state, from, to) do
+    update_in(state, [:zone_masquerades], &(&1 ++ [{from, to}]))
+  end
+
   # --- Rule accumulator (used by chain macro) ---
 
   def push_rule(state, rule) do
@@ -251,6 +276,8 @@ defmodule ErlkoenigNft.Firewall.Builder do
   # --- Serialization ---
 
   def to_term(state) do
+    state = expand_zones(state)
+
     base = %{
       table: state.name,
       chains: Enum.map(state.chains, &chain_to_term/1)
@@ -272,13 +299,205 @@ defmodule ErlkoenigNft.Firewall.Builder do
   end
 
   defp chain_to_term(chain) do
-    %{
-      name: chain.name,
-      hook: chain.hook,
-      type: chain.type,
-      priority: chain.priority,
-      policy: chain.policy,
-      rules: chain.rules
-    }
+    case Map.get(chain, :hook) do
+      nil ->
+        %{name: chain.name, rules: chain.rules}
+
+      hook ->
+        %{
+          name: chain.name,
+          hook: hook,
+          type: Map.get(chain, :type, :filter),
+          priority: Map.get(chain, :priority, 0),
+          policy: Map.get(chain, :policy, :accept),
+          rules: chain.rules
+        }
+    end
+  end
+
+  # --- Zone expansion ---
+
+  defp expand_zones(%{zones: []} = state), do: state
+
+  defp expand_zones(state) do
+    validate_zones!(state)
+
+    zone_map = Map.new(state.zones)
+    zone_chains = []
+
+    # 1. z_dispatch_input — base chain (hook: input, policy: drop)
+    #    Zones with zone_input get a jump; zones without get iifname_accept
+    #    (implicitly trusted — no filtering configured means accept all).
+    configured_zones = MapSet.new(Enum.map(state.zone_inputs, &elem(&1, 0)))
+
+    input_dispatch_rules =
+      [:ct_established_accept, {:iifname_accept, "lo"}] ++
+        Enum.flat_map(state.zones, fn {zone_name, interfaces} ->
+          if MapSet.member?(configured_zones, zone_name) do
+            Enum.map(interfaces, fn iface ->
+              {:iifname_jump, iface, "z_input_#{zone_name}"}
+            end)
+          else
+            # Zone without zone_input — accept all traffic from its interfaces
+            Enum.map(interfaces, fn iface ->
+              {:iifname_accept, iface}
+            end)
+          end
+        end)
+
+    zone_chains =
+      zone_chains ++
+        [
+          %{
+            name: "z_dispatch_input",
+            hook: :input,
+            type: :filter,
+            priority: 0,
+            policy: :drop,
+            rules: input_dispatch_rules
+          }
+        ]
+
+    # 2. z_input_<zone> — regular chains
+    zone_chains =
+      zone_chains ++
+        Enum.map(state.zone_inputs, fn {zone_name, policy, rules} ->
+          final_rules =
+            if policy == :accept, do: rules ++ [:accept], else: rules
+
+          %{name: "z_input_#{zone_name}", rules: final_rules}
+        end)
+
+    # 3. z_dispatch_forward — base chain (hook: forward, policy: drop)
+    has_forwards = state.zone_forwards != []
+
+    zone_chains =
+      if has_forwards do
+        forward_dispatch_rules =
+          [:ct_established_accept] ++
+            Enum.flat_map(state.zone_forwards, fn {from, to, _policy, _rules} ->
+              in_ifaces = Map.fetch!(zone_map, from)
+              out_ifaces = Map.fetch!(zone_map, to)
+
+              for in_if <- in_ifaces, out_if <- out_ifaces do
+                {:iifname_oifname_jump, in_if, out_if, "z_fwd_#{from}_#{to}"}
+              end
+            end)
+
+        zone_chains ++
+          [
+            %{
+              name: "z_dispatch_forward",
+              hook: :forward,
+              type: :filter,
+              priority: 0,
+              policy: :drop,
+              rules: forward_dispatch_rules
+            }
+          ]
+      else
+        zone_chains
+      end
+
+    # 4. z_fwd_<from>_<to> — regular chains
+    zone_chains =
+      zone_chains ++
+        Enum.map(state.zone_forwards, fn {from, to, policy, rules} ->
+          final_rules =
+            if policy == :accept, do: rules ++ [:accept], else: rules
+
+          %{name: "z_fwd_#{from}_#{to}", rules: final_rules}
+        end)
+
+    # 5. z_nat_postrouting — base chain for masquerade
+    zone_chains =
+      if state.zone_masquerades != [] do
+        nat_rules =
+          Enum.flat_map(state.zone_masquerades, fn {from, to} ->
+            in_ifaces = Map.fetch!(zone_map, from)
+            out_ifaces = Map.fetch!(zone_map, to)
+
+            for in_if <- in_ifaces, out_if <- out_ifaces do
+              {:iifname_oifname_masq, in_if, out_if}
+            end
+          end)
+
+        zone_chains ++
+          [
+            %{
+              name: "z_nat_postrouting",
+              hook: :postrouting,
+              type: :nat,
+              priority: 100,
+              policy: :accept,
+              rules: nat_rules
+            }
+          ]
+      else
+        zone_chains
+      end
+
+    # Prepend zone chains before manual chains
+    %{state | chains: zone_chains ++ state.chains}
+  end
+
+  defp validate_zones!(state) do
+    zone_names = Enum.map(state.zones, &elem(&1, 0))
+
+    # Check for duplicate zone names
+    case zone_names -- Enum.uniq(zone_names) do
+      [] -> :ok
+      dups -> raise "Duplicate zone names: #{inspect(Enum.uniq(dups))}"
+    end
+
+    # Check for duplicate interfaces across zones
+    all_ifaces =
+      Enum.flat_map(state.zones, fn {name, ifaces} ->
+        Enum.map(ifaces, &{&1, name})
+      end)
+
+    iface_names = Enum.map(all_ifaces, &elem(&1, 0))
+
+    case iface_names -- Enum.uniq(iface_names) do
+      [] ->
+        :ok
+
+      dup_ifaces ->
+        dup_ifaces = Enum.uniq(dup_ifaces)
+
+        zones_with_dup =
+          Enum.filter(all_ifaces, fn {iface, _} -> iface in dup_ifaces end)
+
+        raise "Interface(s) assigned to multiple zones: #{inspect(zones_with_dup)}"
+    end
+
+    # Check zone_input references
+    Enum.each(state.zone_inputs, fn {zone_name, _, _} ->
+      unless zone_name in zone_names do
+        raise "zone_input references undefined zone: #{inspect(zone_name)}"
+      end
+    end)
+
+    # Check zone_forward references
+    Enum.each(state.zone_forwards, fn {from, to, _, _} ->
+      unless from in zone_names do
+        raise "zone_forward references undefined zone: #{inspect(from)}"
+      end
+
+      unless to in zone_names do
+        raise "zone_forward references undefined zone: #{inspect(to)}"
+      end
+    end)
+
+    # Check zone_masquerade references
+    Enum.each(state.zone_masquerades, fn {from, to} ->
+      unless from in zone_names do
+        raise "zone_masquerade references undefined zone: #{inspect(from)}"
+      end
+
+      unless to in zone_names do
+        raise "zone_masquerade references undefined zone: #{inspect(to)}"
+      end
+    end)
   end
 end

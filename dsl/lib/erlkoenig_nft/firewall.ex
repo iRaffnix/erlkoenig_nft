@@ -257,6 +257,64 @@ defmodule ErlkoenigNft.Firewall do
     quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.log_reject(unquote(prefix)))
   end
 
+  # --- Interface matching ---
+
+  defmacro accept_on_interface(name) do
+    quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.iifname_accept(unquote(name)))
+  end
+
+  defmacro accept_output_interface(name) do
+    quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.oifname_accept(unquote(name)))
+  end
+
+  defmacro masquerade do
+    quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.masquerade())
+  end
+
+  defmacro masquerade_not_via(name) do
+    quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.oifname_neq_masq(unquote(name)))
+  end
+
+  defmacro accept_forward_established do
+    quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.forward_established())
+  end
+
+  # --- Zone definitions ---
+
+  defmacro zone(name, opts) do
+    quote do
+      @fw_builder Builder.add_zone(@fw_builder, unquote(name), unquote(opts))
+    end
+  end
+
+  defmacro zone_input(zone_name, opts, do: block) do
+    quote do
+      @fw_builder %{@fw_builder | rules_acc: []}
+      unquote(block)
+      {rules, builder} = Builder.take_rules(@fw_builder)
+      @fw_builder Builder.add_zone_input(builder, unquote(zone_name),
+        Keyword.get(unquote(opts), :policy, :drop), rules)
+    end
+  end
+
+  defmacro zone_forward(from_zone, opts, do: block) do
+    quote do
+      @fw_builder %{@fw_builder | rules_acc: []}
+      unquote(block)
+      {rules, builder} = Builder.take_rules(@fw_builder)
+      to_zone = Keyword.fetch!(unquote(opts), :to)
+      policy = Keyword.get(unquote(opts), :policy, :drop)
+      @fw_builder Builder.add_zone_forward(builder, unquote(from_zone), to_zone, policy, rules)
+    end
+  end
+
+  defmacro zone_masquerade(from_zone, opts) do
+    quote do
+      to_zone = Keyword.fetch!(unquote(opts), :to)
+      @fw_builder Builder.add_zone_masquerade(@fw_builder, unquote(from_zone), to_zone)
+    end
+  end
+
   # --- SYN proxy ---
 
   defmacro synproxy(ports, opts) do

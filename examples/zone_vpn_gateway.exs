@@ -1,19 +1,16 @@
 #!/usr/bin/env elixir
 #
-# VPN Gateway
+# Zone-based VPN Gateway
 #
-# WireGuard VPN gateway with zone-based forwarding and NAT.
-# Routes traffic between WireGuard clients (wg0) and the internet (eth0).
+# Two zones: WAN (eth0) and VPN (wg0).
+# WireGuard clients can access the internet through the gateway.
+# Strict inbound policy on WAN — only SSH and WireGuard allowed.
+# VPN clients get full forwarding to WAN with NAT.
 #
-# Zones:
-#   wan (eth0) — internet-facing, strict inbound policy
-#   vpn (wg0)  — WireGuard tunnel, trusted clients
-#
-# Traffic flow:
-#   vpn -> wan: allowed + masqueraded (VPN clients reach internet)
-#   wan -> vpn: only established (no unsolicited inbound to clients)
+# Replaces the manual vpn_gateway.exs with proper zone-based
+# interface matching instead of term-level workarounds.
 
-defmodule Firewall.VPNGateway do
+defmodule Firewall.ZoneVPNGateway do
   use ErlkoenigNft.Firewall
 
   firewall "vpngw" do
@@ -52,7 +49,7 @@ defmodule Firewall.VPNGateway do
       accept :established
     end
 
-    # --- NAT: masquerade VPN -> WAN ---
+    # --- NAT: masquerade VPN traffic going out WAN ---
 
     zone_masquerade "vpn", to: "wan"
 
@@ -65,7 +62,7 @@ defmodule Firewall.VPNGateway do
   end
 end
 
-defmodule Guard.VPNGateway do
+defmodule Guard.ZoneVPNGateway do
   use ErlkoenigNft.Guard
 
   guard do
@@ -76,7 +73,7 @@ defmodule Guard.VPNGateway do
   end
 end
 
-defmodule Watch.VPNGateway do
+defmodule Watch.ZoneVPNGateway do
   use ErlkoenigNft.Watch
 
   watch :vpn do

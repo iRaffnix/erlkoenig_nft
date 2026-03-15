@@ -6,6 +6,7 @@ set -eu
 REPO="iRaffnix/erlkoenig_nft"
 PREFIX="/opt/erlkoenig_nft"
 VERSION=""
+LOCAL_DIR=""
 INSTALL_SYSTEMD=true
 FORCE=false
 
@@ -15,19 +16,24 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --prefix)      PREFIX="$2"; shift 2 ;;
         --version)     VERSION="$2"; shift 2 ;;
+        --local)       LOCAL_DIR="$2"; shift 2 ;;
         --no-systemd)  INSTALL_SYSTEMD=false; shift ;;
         --force)       FORCE=true; shift ;;
         -h|--help)
             echo "Usage: install.sh --version vX.Y.Z [--prefix DIR] [--no-systemd] [--force]"
+            echo "       install.sh --local DIR [--prefix DIR] [--no-systemd] [--force]"
             echo ""
             echo "Options:"
-            echo "  --version vX.Y.Z  Version to install (required)"
+            echo "  --version vX.Y.Z  Version to install (from GitHub Releases)"
+            echo "  --local DIR       Install from local artifacts directory (CI test)"
             echo "  --prefix DIR      Installation directory (default: /opt/erlkoenig_nft)"
             echo "  --no-systemd      Skip systemd unit installation"
             echo "  --force           Force reinstall even if same version"
             echo ""
-            echo "Example:"
+            echo "Examples:"
             echo "  sudo sh install.sh --version v0.6.0"
+            echo "  gh run download <run-id> -D /tmp/artifacts"
+            echo "  sudo sh install.sh --local /tmp/artifacts"
             exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -80,8 +86,7 @@ daemon_is_running() {
     if command -v systemctl >/dev/null 2>&1; then
         systemctl is-active --quiet erlkoenig_nft 2>/dev/null && return 0
     fi
-    # Fallback: check if the beam process is running
-    pgrep -f "erlkoenig_nft.*beam" >/dev/null 2>&1 && return 0
+    pgrep -f "erlkoenig_nft_run" >/dev/null 2>&1 && return 0
     return 1
 }
 
@@ -89,16 +94,23 @@ daemon_is_running() {
 
 stop_daemon() {
     info "Stopping erlkoenig_nft daemon ..."
+
+    # Prefer systemd (sends SIGTERM, waits TimeoutStopSec)
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet erlkoenig_nft 2>/dev/null; then
         systemctl stop erlkoenig_nft 2>/dev/null || true
     fi
-    # Also kill any orphan beam processes (e.g. started via relx `start`)
-    pkill -f "erlkoenig_nft.*beam" 2>/dev/null || true
-    # Kill epmd name reservation so the new instance can register
-    epmd -names 2>/dev/null | grep -q erlkoenig_nft && epmd -stop erlkoenig_nft 2>/dev/null || true
-    # Wait for clean shutdown (up to 10s)
+
+    # Fallback: find the PID file or beam process and send SIGTERM
+    if daemon_is_running; then
+        BEAM_PID=$(pgrep -f "erlkoenig_nft_run" 2>/dev/null | head -1 || true)
+        if [ -n "$BEAM_PID" ]; then
+            kill -TERM "$BEAM_PID" 2>/dev/null || true
+        fi
+    fi
+
+    # Wait for clean shutdown (up to 15s — matches systemd TimeoutStopSec)
     i=0
-    while [ $i -lt 10 ]; do
+    while [ $i -lt 15 ]; do
         if ! daemon_is_running; then
             ok "Daemon stopped"
             return 0
@@ -106,9 +118,9 @@ stop_daemon() {
         sleep 1
         i=$((i + 1))
     done
-    # Force kill if still alive
-    pkill -9 -f "erlkoenig_nft.*beam" 2>/dev/null || true
-    pkill -9 epmd 2>/dev/null || true
+
+    # Force kill only the specific beam process (never kill all epmd)
+    pgrep -f "erlkoenig_nft_run" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     sleep 1
     ok "Daemon stopped (forced)"
 }
@@ -117,15 +129,11 @@ stop_daemon() {
 
 start_daemon() {
     info "Starting erlkoenig_nft daemon ..."
-    # Ensure epmd name is free before starting
-    epmd -stop erlkoenig_nft 2>/dev/null || true
-    sleep 1
     if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/erlkoenig_nft.service ]; then
         systemctl start erlkoenig_nft
     else
-        "$PREFIX/dist/erlkoenig_nft_run" &
+        "$PREFIX/bin/erlkoenig_nft_run" &
     fi
-    # Verify it started
     sleep 3
     if daemon_is_running; then
         ok "Daemon started"
@@ -141,8 +149,22 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-    err "curl is required"
+if [ -z "$LOCAL_DIR" ] && ! command -v curl >/dev/null 2>&1; then
+    err "curl is required (or use --local)"
+    exit 1
+fi
+
+# --- Conflict detection ---
+
+if [ -f /opt/erlkoenig/bin/erlkoenig ] && { [ -f /etc/systemd/system/erlkoenig.service ] || systemctl is-active --quiet erlkoenig 2>/dev/null; }; then
+    err "erlkoenig is installed and includes erlkoenig_nft as an OTP application."
+    echo "" >&2
+    echo "  The firewall is already managed by the erlkoenig service." >&2
+    echo "  Installing erlkoenig_nft standalone will cause nftables conflicts." >&2
+    echo "" >&2
+    echo "  If you want to run erlkoenig_nft standalone instead:" >&2
+    echo "    sudo systemctl stop erlkoenig" >&2
+    echo "    sudo systemctl disable erlkoenig" >&2
     exit 1
 fi
 
@@ -150,10 +172,15 @@ fi
 
 TARGET=$(detect_target)
 
-if [ -z "$VERSION" ]; then
-    err "--version is required"
+if [ -z "$VERSION" ] && [ -z "$LOCAL_DIR" ]; then
+    err "--version or --local is required"
     echo "  Usage: sudo sh install.sh --version vX.Y.Z" >&2
-    echo "  Releases: https://github.com/${REPO}/releases" >&2
+    echo "         sudo sh install.sh --local /tmp/artifacts" >&2
+    exit 1
+fi
+
+if [ -n "$LOCAL_DIR" ] && [ ! -d "$LOCAL_DIR" ]; then
+    err "Local directory not found: $LOCAL_DIR"
     exit 1
 fi
 
@@ -200,32 +227,50 @@ if [ "$IS_UPDATE" = true ] && [ -f "$PREFIX/etc/firewall.term" ]; then
     ok "Config backed up: $BACKUP"
 fi
 
-# --- Download to temp dir, verify, then extract ---
+# --- Acquire release artifact ---
 
 TMPDIR=$(mktemp -d)
-ARCHIVE="erlkoenig_nft-${VERSION}-${TARGET}.tar.gz"
-URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE}"
+ARTIFACT=""
 
 cleanup() {
     rm -rf "$TMPDIR"
 }
 trap cleanup EXIT
 
-info "Downloading ${URL} ..."
-if ! curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE"; then
-    err "Download failed. Check that ${VERSION} has a ${TARGET} build."
-    err "Available at: https://github.com/${REPO}/releases/tag/${VERSION}"
-    # Restart daemon with old version if it was running
-    if [ "$DAEMON_WAS_RUNNING" = true ]; then
-        warn "Restarting daemon with previous version ..."
-        start_daemon
+if [ -n "$LOCAL_DIR" ]; then
+    # --- Local mode: find tarball in directory ---
+    info "Installing from local artifacts: $LOCAL_DIR"
+    ARTIFACT=$(find "$LOCAL_DIR" -name 'erlkoenig_nft-*.tar.gz' -print -quit 2>/dev/null || true)
+    if [ -z "$ARTIFACT" ]; then
+        err "No erlkoenig_nft-*.tar.gz found in $LOCAL_DIR"
+        exit 1
     fi
-    exit 1
+    # Detect version from tarball content if not given
+    if [ -z "$VERSION" ]; then
+        VERSION=$(tar xzf "$ARTIFACT" -O releases/start_erl.data 2>/dev/null | awk '{print "v"$2}' || true)
+    fi
+    ok "Found: $(basename "$ARTIFACT")"
+else
+    # --- Remote mode: download from GitHub Releases ---
+    ARCHIVE="erlkoenig_nft-${VERSION}-${TARGET}.tar.gz"
+    URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE}"
+    ARTIFACT="$TMPDIR/$ARCHIVE"
+
+    info "Downloading ${ARCHIVE} ..."
+    if ! curl -fsSL "$URL" -o "$ARTIFACT"; then
+        err "Download failed. Check that ${VERSION} has a ${TARGET} build."
+        err "Available at: https://github.com/${REPO}/releases/tag/${VERSION}"
+        if [ "$DAEMON_WAS_RUNNING" = true ]; then
+            warn "Restarting daemon with previous version ..."
+            start_daemon
+        fi
+        exit 1
+    fi
 fi
 
 # Verify the archive is valid
-if ! tar tzf "$TMPDIR/$ARCHIVE" >/dev/null 2>&1; then
-    err "Downloaded archive is corrupt"
+if ! tar tzf "$ARTIFACT" >/dev/null 2>&1; then
+    err "Release archive is corrupt"
     if [ "$DAEMON_WAS_RUNNING" = true ]; then
         warn "Restarting daemon with previous version ..."
         start_daemon
@@ -233,7 +278,7 @@ if ! tar tzf "$TMPDIR/$ARCHIVE" >/dev/null 2>&1; then
     exit 1
 fi
 
-ok "Download verified"
+ok "Artifact verified"
 
 # --- Extract (preserve config) ---
 
@@ -242,15 +287,13 @@ mkdir -p "$PREFIX"
 # Save config files before extracting
 if [ "$IS_UPDATE" = true ]; then
     # Save user-modified files
-    for f in etc/firewall.term releases/COOKIE; do
-        if [ -f "$PREFIX/$f" ]; then
-            cp "$PREFIX/$f" "$TMPDIR/$(basename $f).preserve"
-        fi
-    done
+    if [ -f "$PREFIX/etc/firewall.term" ]; then
+        cp "$PREFIX/etc/firewall.term" "$TMPDIR/firewall.term.preserve"
+    fi
 fi
 
 info "Extracting to ${PREFIX} ..."
-if ! tar xzf "$TMPDIR/$ARCHIVE" -C "$PREFIX"; then
+if ! tar xzf "$ARTIFACT" -C "$PREFIX"; then
     err "Extraction failed"
     if [ "$DAEMON_WAS_RUNNING" = true ]; then
         warn "Restarting daemon with previous version ..."
@@ -261,13 +304,10 @@ fi
 
 # Restore preserved config files
 if [ "$IS_UPDATE" = true ]; then
-    for f in etc/firewall.term releases/COOKIE; do
-        base=$(basename "$f")
-        if [ -f "$TMPDIR/${base}.preserve" ]; then
-            mkdir -p "$PREFIX/$(dirname $f)"
-            cp "$TMPDIR/${base}.preserve" "$PREFIX/$f"
-        fi
-    done
+    if [ -f "$TMPDIR/firewall.term.preserve" ]; then
+        mkdir -p "$PREFIX/etc"
+        cp "$TMPDIR/firewall.term.preserve" "$PREFIX/etc/firewall.term"
+    fi
     ok "Config files preserved"
 fi
 
@@ -309,16 +349,6 @@ COMPLETIONS_INSTALLED=false
 if [ -d /etc/bash_completion.d ] && [ -x /usr/local/bin/erlkoenig-nft ]; then
     /usr/local/bin/erlkoenig-nft completions bash > /etc/bash_completion.d/erlkoenig-nft 2>/dev/null && \
         COMPLETIONS_INSTALLED=true && ok "Bash completions: /etc/bash_completion.d/erlkoenig-nft"
-fi
-
-# --- Generate cookie (first install only) ---
-
-COOKIE_FILE="$PREFIX/releases/COOKIE"
-if [ ! -f "$COOKIE_FILE" ]; then
-    mkdir -p "$(dirname "$COOKIE_FILE")"
-    od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$COOKIE_FILE"
-    chmod 400 "$COOKIE_FILE"
-    ok "Generated Erlang cookie"
 fi
 
 # --- Default config (first install only) ---

@@ -1,18 +1,10 @@
 #!/bin/sh
-# Start erlkoenig_nft without Erlang distribution.
-# Used by systemd — bypasses the relx start script which requires -sname.
+# Start erlkoenig_nft as a standalone daemon (no Erlang distribution).
+# Managed by systemd — shutdown via SIGTERM.
 
 ROOTDIR="${ERLKOENIG_ROOTDIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-REL_VSN=$(cat "$ROOTDIR/releases/start_erl.data" | cut -d' ' -f2)
-ERTS_VSN=$(cat "$ROOTDIR/releases/start_erl.data" | cut -d' ' -f1)
-
-# Generate a random cookie on first start
-COOKIE_FILE="$ROOTDIR/releases/COOKIE"
-if [ ! -f "$COOKIE_FILE" ]; then
-    od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$COOKIE_FILE"
-    chmod 400 "$COOKIE_FILE"
-fi
-COOKIE=$(cat "$COOKIE_FILE")
+REL_VSN=$(cut -d' ' -f2 < "$ROOTDIR/releases/start_erl.data")
+ERTS_VSN=$(cut -d' ' -f1 < "$ROOTDIR/releases/start_erl.data")
 
 exec "$ROOTDIR/erts-$ERTS_VSN/bin/erl" \
     -boot "$ROOTDIR/releases/$REL_VSN/start" \
@@ -20,5 +12,4 @@ exec "$ROOTDIR/erts-$ERTS_VSN/bin/erl" \
     -boot_var SYSTEM_LIB_DIR "$ROOTDIR/lib" \
     -config "$ROOTDIR/releases/$REL_VSN/sys.config" \
     -args_file "$ROOTDIR/releases/$REL_VSN/vm.args" \
-    -setcookie "$COOKIE" \
     -noinput

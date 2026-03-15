@@ -43,6 +43,8 @@ wrap each rule separately:
     iif_accept/0,
     iifname_accept/1,
     iifname_jump/2,
+    iifname_oifname_jump/3,
+    iifname_oifname_masq/2,
     oifname_accept/1,
     tcp_accept/1,
     tcp_accept_named/2,
@@ -188,6 +190,28 @@ iifname_jump(Name, Target) ->
     [nft_expr_ir:meta(iifname, ?REG1),
      nft_expr_ir:cmp(eq, ?REG1, Padded),
      nft_expr_ir:jump(Target)].
+
+-doc "Jump to a named chain if traffic arrives on InIf and leaves via OutIf.".
+-spec iifname_oifname_jump(binary(), binary(), binary()) -> rule().
+iifname_oifname_jump(InIf, OutIf, Target) ->
+    PaddedIn = pad_ifname(InIf),
+    PaddedOut = pad_ifname(OutIf),
+    [nft_expr_ir:meta(iifname, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, PaddedIn),
+     nft_expr_ir:meta(oifname, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, PaddedOut),
+     nft_expr_ir:jump(Target)].
+
+-doc "Masquerade traffic arriving on InIf and leaving via OutIf.".
+-spec iifname_oifname_masq(binary(), binary()) -> rule().
+iifname_oifname_masq(InIf, OutIf) ->
+    PaddedIn = pad_ifname(InIf),
+    PaddedOut = pad_ifname(OutIf),
+    [nft_expr_ir:meta(iifname, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, PaddedIn),
+     nft_expr_ir:meta(oifname, ?REG1),
+     nft_expr_ir:cmp(eq, ?REG1, PaddedOut),
+     nft_expr_ir:masq()].
 
 -doc "Accept traffic leaving via the given interface.".
 -spec oifname_accept(binary()) -> rule().

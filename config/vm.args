@@ -1,7 +1,6 @@
-## Erlang distribution — required for bin/erlkoenig_nft start/stop/status.
-## Listens only on loopback. Use erlkoenig_nft_run for no-distribution mode.
--sname erlkoenig_nft
--setcookie erlkoenig_nft
--kernel inet_dist_use_interface {127,0,0,1}
+## No Erlang distribution — this is a standalone daemon.
+## Lifecycle is managed via systemd (SIGTERM for shutdown).
+-start_epmd false
+-erl_epmd_port 0
 
 +sbwt very_short

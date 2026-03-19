@@ -5,7 +5,7 @@ defmodule ErlkoenigNft.CLI.Daemon do
   Connects to the daemon's JSON API socket and sends commands.
   """
 
-  @default_socket "/var/run/erlkoenig.sock"
+  @default_socket "/run/erlkoenig_nft/api.sock"
   @max_response_size 1_048_576
 
   @doc "Send a command to the daemon and return the parsed response."

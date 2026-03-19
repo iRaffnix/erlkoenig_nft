@@ -121,22 +121,29 @@ defmodule ErlkoenigNft.CLI do
 
   defp cmd_apply(args) do
     {file, _opts} = parse_file_args(args)
-    modules = load_file!(file)
 
-    fw_mods = for {:firewall, m} <- modules, do: m
-    guard_mods = for {:guard, m} <- modules, do: m
-    watch_mods = for {:watch, m} <- modules, do: m
+    term_string =
+      if String.ends_with?(file, ".term") do
+        # Already compiled — read the term file directly
+        load_term_string!(file)
+      else
+        # Elixir source — compile first
+        modules = load_file!(file)
 
-    if fw_mods == [] do
-      error("No Firewall module found in #{file}")
-      System.halt(1)
-    end
+        fw_mods = for {:firewall, m} <- modules, do: m
+        guard_mods = for {:guard, m} <- modules, do: m
+        watch_mods = for {:watch, m} <- modules, do: m
 
-    config = hd(fw_mods).config()
-    term = build_full_term(config, guard_mods, watch_mods)
-    term_string = :io_lib.format(~c"~tp.~n", [term]) |> IO.iodata_to_binary()
+        if fw_mods == [] do
+          error("No Firewall module found in #{file}")
+          System.halt(1)
+        end
 
-    info("Compiled #{Path.basename(file)}")
+        config = hd(fw_mods).config()
+        term = build_full_term(config, guard_mods, watch_mods)
+        info("Compiled #{Path.basename(file)}")
+        :io_lib.format(~c"~tp.~n", [term]) |> IO.iodata_to_binary()
+      end
 
     case Daemon.call("apply", %{"term" => term_string}) do
       {:ok, %{"ok" => true}} ->
@@ -456,16 +463,22 @@ defmodule ErlkoenigNft.CLI do
 
   defp cmd_show(args) do
     {file, _opts} = parse_file_args(args)
-    modules = load_file!(file)
 
-    for {type, mod} <- modules do
-      case type do
-        :firewall -> Formatter.render_firewall(mod.config(), mod)
-        :guard -> Formatter.render_guard(mod.guard_config(), mod)
-        :watch ->
-          for watch <- mod.watches() do
-            Formatter.render_watch(watch, mod)
-          end
+    if String.ends_with?(file, ".term") do
+      term = load_term!(file)
+      IO.puts(inspect(term, pretty: true, width: 80, limit: :infinity))
+    else
+      modules = load_file!(file)
+
+      for {type, mod} <- modules do
+        case type do
+          :firewall -> Formatter.render_firewall(mod.config(), mod)
+          :guard -> Formatter.render_guard(mod.guard_config(), mod)
+          :watch ->
+            for watch <- mod.watches() do
+              Formatter.render_watch(watch, mod)
+            end
+        end
       end
     end
   end
@@ -496,39 +509,59 @@ defmodule ErlkoenigNft.CLI do
 
   defp cmd_validate(args) do
     {file, _opts} = parse_file_args(args)
-    modules = load_file!(file)
 
-    errors = List.flatten(for {type, mod} <- modules, do: validate_module(type, mod))
-
-    if errors == [] do
-      success("#{Path.basename(file)} — valid")
-      info("  Modules: #{length(modules)}")
-
-      for {type, mod} <- modules do
-        info("  #{type}: #{inspect(mod)}")
+    if String.ends_with?(file, ".term") do
+      term = load_term!(file)
+      table = term[:table] || term[<<"table">>]
+      if table do
+        success("#{Path.basename(file)} — valid term file")
+        info("  table: #{table}")
+        info("  chains: #{length(term[:chains] || term[<<"chains">>] || [])}")
+      else
+        error("#{Path.basename(file)} — missing :table key")
+        System.halt(1)
       end
     else
-      error("#{Path.basename(file)} — #{length(errors)} error(s):")
-      for e <- errors, do: error("  #{e}")
-      System.halt(1)
+      modules = load_file!(file)
+
+      errors = List.flatten(for {type, mod} <- modules, do: validate_module(type, mod))
+
+      if errors == [] do
+        success("#{Path.basename(file)} — valid")
+        info("  Modules: #{length(modules)}")
+
+        for {type, mod} <- modules do
+          info("  #{type}: #{inspect(mod)}")
+        end
+      else
+        error("#{Path.basename(file)} — #{length(errors)} error(s):")
+        for e <- errors, do: error("  #{e}")
+        System.halt(1)
+      end
     end
   end
 
   defp cmd_inspect(args) do
     {file, _opts} = parse_file_args(args)
-    modules = load_file!(file)
 
-    for {type, mod} <- modules do
-      config =
-        case type do
-          :firewall -> mod.config()
-          :guard -> mod.guard_config()
-          :watch -> mod.watches()
-        end
+    if String.ends_with?(file, ".term") do
+      term = load_term!(file)
+      IO.puts(inspect(term, pretty: true, width: 80, limit: :infinity))
+    else
+      modules = load_file!(file)
 
-      header("#{type} — #{inspect(mod)}")
-      IO.puts(inspect(config, pretty: true, width: 80, limit: :infinity))
-      IO.puts("")
+      for {type, mod} <- modules do
+        config =
+          case type do
+            :firewall -> mod.config()
+            :guard -> mod.guard_config()
+            :watch -> mod.watches()
+          end
+
+        header("#{type} — #{inspect(mod)}")
+        IO.puts(inspect(config, pretty: true, width: 80, limit: :infinity))
+        IO.puts("")
+      end
     end
   end
 
@@ -649,7 +682,7 @@ defmodule ErlkoenigNft.CLI do
       erlkoenig completions fish > ~/.config/fish/completions/erlkoenig.fish
 
     #{color(:bold, "ENVIRONMENT")}
-      ERLKOENIG_SOCKET   Override daemon socket path (default: /var/run/erlkoenig.sock)
+      ERLKOENIG_SOCKET   Override daemon socket path (default: /run/erlkoenig_nft/api.sock)
 
     #{color(:bold, "DOCUMENTATION")}
       https://github.com/iRaffnix/erlkoenig_nft
@@ -657,6 +690,48 @@ defmodule ErlkoenigNft.CLI do
   end
 
   # --- Helpers ---
+
+  defp load_term!(path) do
+    content = load_term_string!(path)
+
+    case :erl_scan.string(String.to_charlist(content)) do
+      {:ok, tokens, _} ->
+        case :erl_parse.parse_term(tokens) do
+          {:ok, term} ->
+            term
+
+          {:error, {line, _, desc}} ->
+            error("Invalid term in #{path}:#{line}: #{:erl_parse.format_error(desc)}")
+            System.halt(1)
+        end
+
+      {:error, {line, _, desc}, _} ->
+        error("Invalid term file #{path}:#{line}: #{:erl_scan.format_error(desc)}")
+        System.halt(1)
+    end
+  end
+
+  defp load_term_string!(path) do
+    unless File.exists?(path) do
+      error("File not found: #{path}")
+      System.halt(1)
+    end
+
+    case File.read(path) do
+      {:ok, content} ->
+        # Validate it's a parseable Erlang term
+        case :erl_scan.string(String.to_charlist(content)) do
+          {:ok, _tokens, _} -> content
+          {:error, {line, _, desc}, _} ->
+            error("Invalid term file #{path}:#{line}: #{:erl_scan.format_error(desc)}")
+            System.halt(1)
+        end
+
+      {:error, reason} ->
+        error("Cannot read #{path}: #{reason}")
+        System.halt(1)
+    end
+  end
 
   defp load_file!(path) do
     unless File.exists?(path) do

@@ -4,17 +4,45 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=@@PREFIX@@
-Environment=HOME=@@PREFIX@@
-ExecStart=@@PREFIX@@/bin/erlkoenig_nft_run
+
+## Dedicated service user
+User=erlkoenig
+Group=erlkoenig
+
+## EPMD hardening: bind to localhost only
+## install.sh patches this to private IP for cluster mode
+Environment=ERL_EPMD_ADDRESS=127.0.0.1
+Environment=ERL_EPMD_PORT=4369
+
+## Start: export cookie, then exec into release wrapper
+ExecStart=/bin/sh -ec '\
+    export RELX_COOKIE="$$(cat /opt/erlkoenig_nft/cookie)"; \
+    exec /opt/erlkoenig_nft/bin/erlkoenig_nft foreground'
+
+## Graceful shutdown
 KillSignal=SIGTERM
 TimeoutStopSec=15
+
+## Restart policy
 Restart=on-failure
 RestartSec=5
+
+## Directories (systemd creates with correct owner)
+RuntimeDirectory=erlkoenig_nft
+RuntimeDirectoryMode=0755
+StateDirectory=erlkoenig_nft
+StateDirectoryMode=0750
+
+## File descriptors
 LimitNOFILE=65536
 
+## nftables needs CAP_NET_ADMIN (netlink nf_tables) + CAP_NET_RAW (raw socket)
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
 ## Security hardening
-NoNewPrivileges=yes
+## Note: NoNewPrivileges must be OFF for AmbientCapabilities to work
+NoNewPrivileges=no
 ProtectHome=yes
 PrivateTmp=yes
 ProtectClock=yes

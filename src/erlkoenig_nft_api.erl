@@ -30,7 +30,7 @@ similar to the Docker daemon socket.
 Socket path (in order of precedence):
   1. ERLKOENIG_SOCKET environment variable
   2. application:get_env(erlkoenig_nft, api_socket)
-  3. /var/run/erlkoenig.sock
+  3. /run/erlkoenig_nft/api.sock
 
 Commands: status, ban, unban, reload, apply, counters, guard_stats, guard_banned,
           list_ruleset, list_chains, list_sets, list_set, list_counters,
@@ -42,7 +42,7 @@ Commands: status, ban, unban, reload, apply, counters, guard_stats, guard_banned
 -export([start_link/0]).
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, terminate/2]).
 
--define(DEFAULT_SOCKET, "/var/run/erlkoenig.sock").
+-define(DEFAULT_SOCKET, "/run/erlkoenig_nft/api.sock").
 -define(MAX_BUF_SIZE, 1048576). %% 1 MB max request size
 
 %% --- Public API ---

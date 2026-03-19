@@ -9,7 +9,7 @@ on:
 jobs:
   erlang:
     name: Erlang Tests + Dialyzer
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +40,7 @@ jobs:
 
   kernel:
     name: Kernel Tests (root)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +61,7 @@ jobs:
 
   dsl:
     name: Elixir DSL Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -78,38 +78,18 @@ jobs:
         run: cd dsl && mix test
 
   release:
-    name: Release ${{ matrix.target.name }}
-    runs-on: ubuntu-latest
+    name: Release x86_64-linux
+    runs-on: ubuntu-22.04
     needs: [erlang]
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - name: x86_64-glibc
-            image: elixir:1.18-otp-27-slim
-            deps: apt-get update && apt-get install -y git make gcc g++ curl
-          - name: x86_64-musl
-            image: hexpm/elixir:1.18.3-erlang-27.3-alpine-3.21.3
-            deps: apk add --no-cache git make gcc g++ musl-dev curl
-
-    container:
-      image: ${{ matrix.target.image }}
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build deps
-        run: ${{ matrix.target.deps }}
-
-      - name: Install rebar3
-        run: |
-          curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3
-          chmod +x /usr/local/bin/rebar3
-
-      - name: Verify install
-        run: |
-          erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
-          rebar3 version
+      - name: Setup Beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18'
+          rebar3-version: '3.24'
 
       - name: Build CLI escript
         run: cd dsl && mix escript.build
@@ -122,10 +102,11 @@ jobs:
       - name: Collect artifact
         run: |
           mkdir -p out
-          find _build/prod/rel -name '*.tar.gz' -exec cp {} out/${{ github.event.repository.name }}-${{ matrix.target.name }}.tar.gz \;
+          find _build/prod/rel -name '*.tar.gz' \
+            -exec cp {} out/${{ github.event.repository.name }}-x86_64-linux.tar.gz \;
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.target.name }}
+          name: release-x86_64-linux
           path: out/*.tar.gz

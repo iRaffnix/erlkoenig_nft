@@ -1,6 +1,0 @@
-## No Erlang distribution — this is a standalone daemon.
-## Lifecycle is managed via systemd (SIGTERM for shutdown).
--start_epmd false
--erl_epmd_port 0
-
-+sbwt very_short

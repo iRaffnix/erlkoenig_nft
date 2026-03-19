@@ -1,0 +1,11 @@
+## Node name — short name, hostname appended automatically
+-sname erlkoenig_nft
+
+## Cookie — substituted at startup from RELX_COOKIE env var
+-setcookie ${RELX_COOKIE}
+
+## Standard epmd — hardened via ERL_EPMD_ADDRESS in systemd unit
+## Do NOT set -start_epmd false
+
+## Scheduler
++sbwt very_short

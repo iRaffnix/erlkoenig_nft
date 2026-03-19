@@ -15,32 +15,20 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - name: x86_64-glibc
-            runner: ubuntu-latest
-            image: elixir:1.18-otp-27-slim
-            deps: apt-get update && apt-get install -y git make gcc g++ curl
-          - name: x86_64-musl
-            runner: ubuntu-latest
-            image: hexpm/elixir:1.18.3-erlang-27.3-alpine-3.21.3
-            deps: apk add --no-cache git make gcc g++ musl-dev curl
-          - name: aarch64-glibc
-            runner: ubuntu-24.04-arm
-            image: elixir:1.18-otp-27-slim
-            deps: apt-get update && apt-get install -y git make gcc g++ curl
-
-    container:
-      image: ${{ matrix.target.image }}
+          - name: x86_64-linux
+            runner: ubuntu-22.04
+          - name: aarch64-linux
+            runner: ubuntu-22.04-arm
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build deps
-        run: ${{ matrix.target.deps }}
-
-      - name: Install rebar3
-        run: |
-          curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3
-          chmod +x /usr/local/bin/rebar3
+      - name: Setup Beam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18'
+          rebar3-version: '3.24'
 
       - name: Build CLI escript
         run: cd dsl && mix escript.build
@@ -53,7 +41,8 @@ jobs:
       - name: Collect artifact
         run: |
           mkdir -p out
-          find _build/prod/rel -name '*.tar.gz' -exec cp {} out/erlkoenig_nft-${{ github.ref_name }}-${{ matrix.target.name }}.tar.gz \;
+          find _build/prod/rel -name '*.tar.gz' \
+            -exec cp {} out/erlkoenig_nft-${{ github.ref_name }}-${{ matrix.target.name }}.tar.gz \;
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -63,7 +52,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build]
     steps:
       - uses: actions/checkout@v4

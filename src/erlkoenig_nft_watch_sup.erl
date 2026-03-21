@@ -35,9 +35,11 @@ boot via start_counter/1.
 
 -behaviour(supervisor).
 
--export([start_link/0,
-         start_counter/1,
-         stop_counters/0]).
+-export([
+    start_link/0,
+    start_counter/1,
+    stop_counters/0
+]).
 
 -export([init/1]).
 
@@ -60,9 +62,11 @@ start_counter(Config) ->
 -doc "Terminate all counter workers.".
 -spec stop_counters() -> ok.
 stop_counters() ->
-    _ = [supervisor:terminate_child(?MODULE, Pid)
-         || {_, Pid, _, _} <- supervisor:which_children(?MODULE),
-            is_pid(Pid)],
+    _ = [
+        supervisor:terminate_child(?MODULE, Pid)
+     || {_, Pid, _, _} <- supervisor:which_children(?MODULE),
+        is_pid(Pid)
+    ],
     ok.
 
 %% --- supervisor callback ---
@@ -70,16 +74,16 @@ stop_counters() ->
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     SupFlags = #{
-        strategy  => simple_one_for_one,
+        strategy => simple_one_for_one,
         intensity => 10,
-        period    => 60
+        period => 60
     },
     ChildSpec = #{
-        id       => erlkoenig_nft_counter,
-        start    => {erlkoenig_nft_counter, start_link, []},
-        restart  => permanent,
+        id => erlkoenig_nft_counter,
+        start => {erlkoenig_nft_counter, start_link, []},
+        restart => permanent,
         shutdown => 5000,
-        type     => worker,
-        modules  => [erlkoenig_nft_counter]
+        type => worker,
+        modules => [erlkoenig_nft_counter]
     },
     {ok, {SupFlags, [ChildSpec]}}.

@@ -41,14 +41,21 @@ Corresponds to libnftnl src/expr/meta.c.
 
 %% --- Types ---
 
--type meta_key() :: len | protocol | mark | iif | oif
-                  | iifname | oifname | nfproto | l4proto
-                  | non_neg_integer().
+-type meta_key() ::
+    len
+    | protocol
+    | mark
+    | iif
+    | oif
+    | iifname
+    | oifname
+    | nfproto
+    | l4proto
+    | non_neg_integer().
 %% Symbolic or numeric meta key. Numeric values are passed through
 %% for keys not yet given an atom alias.
 
 -include("nft_constants.hrl").
-
 
 %% --- Public API ---
 
@@ -72,13 +79,13 @@ load(Key, Reg) when is_integer(Reg), Reg >= 0 ->
 %% --- Internal ---
 
 -spec key_val(meta_key()) -> non_neg_integer().
-key_val(len)      -> ?NFT_META_LEN;
+key_val(len) -> ?NFT_META_LEN;
 key_val(protocol) -> ?NFT_META_PROTOCOL;
-key_val(mark)     -> ?NFT_META_MARK;
-key_val(iif)      -> ?NFT_META_IIF;
-key_val(oif)      -> ?NFT_META_OIF;
-key_val(iifname)  -> ?NFT_META_IIFNAME;
-key_val(oifname)  -> ?NFT_META_OIFNAME;
-key_val(nfproto)  -> ?NFT_META_NFPROTO;
-key_val(l4proto)  -> ?NFT_META_L4PROTO;
+key_val(mark) -> ?NFT_META_MARK;
+key_val(iif) -> ?NFT_META_IIF;
+key_val(oif) -> ?NFT_META_OIF;
+key_val(iifname) -> ?NFT_META_IIFNAME;
+key_val(oifname) -> ?NFT_META_OIFNAME;
+key_val(nfproto) -> ?NFT_META_NFPROTO;
+key_val(l4proto) -> ?NFT_META_L4PROTO;
 key_val(N) when is_integer(N), N >= 0 -> N.

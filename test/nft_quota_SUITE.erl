@@ -25,14 +25,23 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [quota_ir_term, quota_ir_objref, quota_encode,
-                         quota_object_encode, quota_rules_accept,
-                         quota_rules_drop]},
-     {kernel, [], [kernel_named_quota, kernel_quota_in_rule]}].
+    [
+        {unit, [parallel], [
+            quota_ir_term,
+            quota_ir_objref,
+            quota_encode,
+            quota_object_encode,
+            quota_rules_accept,
+            quota_rules_drop
+        ]},
+        {kernel, [], [kernel_named_quota, kernel_quota_in_rule]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -76,8 +85,13 @@ quota_encode(_) ->
 
 quota_object_encode(_) ->
     %% Verify nft_quota:add produces a binary message
-    Msg = nft_quota:add(?NFPROTO_INET, <<"fw">>, <<"bw">>,
-        #{bytes => 1073741824, flags => 0}, 1),
+    Msg = nft_quota:add(
+        ?NFPROTO_INET,
+        <<"fw">>,
+        <<"bw">>,
+        #{bytes => 1073741824, flags => 0},
+        1
+    ),
     ?assert(is_binary(Msg)),
     ?assert(byte_size(Msg) > 20),
     %% Should contain the quota name
@@ -87,7 +101,15 @@ quota_rules_accept(_) ->
     Rule = nft_rules:quota_accept(80, tcp, #{bytes => 1000000, mode => until}),
     ?assert(is_list(Rule)),
     %% Should contain a quota expression
-    ?assert(lists:any(fun({quota, _}) -> true; (_) -> false end, Rule)),
+    ?assert(
+        lists:any(
+            fun
+                ({quota, _}) -> true;
+                (_) -> false
+            end,
+            Rule
+        )
+    ),
     %% Should end with accept
     ?assertMatch({immediate, #{verdict := accept}}, lists:last(Rule)).
 
@@ -95,7 +117,15 @@ quota_rules_drop(_) ->
     Rule = nft_rules:quota_drop(80, tcp, #{bytes => 500000, mode => over}),
     ?assert(is_list(Rule)),
     %% Should contain a quota expression with flags=1
-    ?assert(lists:any(fun({quota, #{flags := 1}}) -> true; (_) -> false end, Rule)),
+    ?assert(
+        lists:any(
+            fun
+                ({quota, #{flags := 1}}) -> true;
+                (_) -> false
+            end,
+            Rule
+        )
+    ),
     %% Should end with drop
     ?assertMatch({immediate, #{verdict := drop}}, lists:last(Rule)).
 
@@ -105,8 +135,15 @@ kernel_named_quota(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_quota:add(?NFPROTO_INET, ?TABLE, <<"test_bw">>,
-            #{bytes => 1073741824, flags => 0}, Seq) end
+        fun(Seq) ->
+            nft_quota:add(
+                ?NFPROTO_INET,
+                ?TABLE,
+                <<"test_bw">>,
+                #{bytes => 1073741824, flags => 0},
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     ?assertMatch([_], [Q || #{<<"quota">> := Q = #{<<"name">> := <<"test_bw">>}} <- Items]),
@@ -118,20 +155,42 @@ kernel_quota_in_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_quota:add(?NFPROTO_INET, ?TABLE, <<"rule_bw">>,
-            #{bytes => 524288000, flags => 0}, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            [nft_expr_ir:meta(l4proto, 1),
-             nft_expr_ir:cmp(eq, 1, <<6>>),
-             nft_expr_ir:tcp_dport(1),
-             nft_expr_ir:cmp(eq, 1, <<0, 80>>),
-             nft_expr_ir:objref_quota(<<"rule_bw">>),
-             nft_expr_ir:accept()])
+        fun(Seq) ->
+            nft_quota:add(
+                ?NFPROTO_INET,
+                ?TABLE,
+                <<"rule_bw">>,
+                #{bytes => 524288000, flags => 0},
+                Seq
+            )
+        end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            [
+                nft_expr_ir:meta(l4proto, 1),
+                nft_expr_ir:cmp(eq, 1, <<6>>),
+                nft_expr_ir:tcp_dport(1),
+                nft_expr_ir:cmp(eq, 1, <<0, 80>>),
+                nft_expr_ir:objref_quota(<<"rule_bw">>),
+                nft_expr_ir:accept()
+            ]
+        )
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     %% Quota object should exist
@@ -149,7 +208,8 @@ kernel_quota_in_rule(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

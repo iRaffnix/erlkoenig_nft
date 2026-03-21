@@ -25,20 +25,29 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [ir_socket_cgroup, ir_socket_cgroup_encode,
-                         cgroup_accept_rule, cgroup_drop_rule]},
-     {kernel, [], [kernel_cgroup_rule]}].
+    [
+        {unit, [parallel], [
+            ir_socket_cgroup,
+            ir_socket_cgroup_encode,
+            cgroup_accept_rule,
+            cgroup_drop_rule
+        ]},
+        {kernel, [], [kernel_cgroup_rule]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
         "0\n" ->
             os:cmd("modprobe nft_socket 2>/dev/null"),
             Config;
-        _ -> {skip, "kernel tests require root"}
+        _ ->
+            {skip, "kernel tests require root"}
     end;
 init_per_group(_, Config) ->
     Config.
@@ -84,8 +93,12 @@ kernel_cgroup_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_chain(Pid),
     ok = nfnl_server:apply_msgs(Pid, [
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            nft_rules:cgroup_accept(1))
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            nft_rules:cgroup_accept(1)
+        )
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     Rules = [R || #{<<"rule">> := R} <- Items],
@@ -102,11 +115,20 @@ kernel_cgroup_rule(_Config) ->
 setup_table_and_chain(Pid) ->
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end
     ]).
 
 decode_expr(Bin) ->
@@ -119,7 +141,8 @@ decode_expr(Bin) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

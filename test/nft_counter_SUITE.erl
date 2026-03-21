@@ -9,14 +9,26 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [counter_new_zero, counter_new_values, counter_expr_name,
-                         counter_in_tcp_accept, counter_in_lookup_drop]},
-     {kernel, [], [kernel_named_counter, kernel_counter_in_rule,
-                   kernel_counter_values]}].
+    [
+        {unit, [parallel], [
+            counter_new_zero,
+            counter_new_values,
+            counter_expr_name,
+            counter_in_tcp_accept,
+            counter_in_lookup_drop
+        ]},
+        {kernel, [], [
+            kernel_named_counter,
+            kernel_counter_in_rule,
+            kernel_counter_values
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -93,18 +105,33 @@ kernel_counter_in_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            [nft_expr_ir:meta(l4proto, 1),
-             nft_expr_ir:cmp(eq, 1, <<6>>),
-             nft_expr_ir:tcp_dport(1),
-             nft_expr_ir:cmp(eq, 1, <<0, 80>>),
-             nft_expr_ir:counter(),
-             nft_expr_ir:accept()])
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            [
+                nft_expr_ir:meta(l4proto, 1),
+                nft_expr_ir:cmp(eq, 1, <<6>>),
+                nft_expr_ir:tcp_dport(1),
+                nft_expr_ir:cmp(eq, 1, <<0, 80>>),
+                nft_expr_ir:counter(),
+                nft_expr_ir:accept()
+            ]
+        )
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     Rules = [R || #{<<"rule">> := R} <- Items],
@@ -129,7 +156,8 @@ kernel_counter_values(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

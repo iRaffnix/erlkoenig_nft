@@ -8,12 +8,14 @@ all() ->
     [{group, unit}].
 
 groups() ->
-    [{unit, [parallel], [
-        service_not_found,
-        resolves_from_file,
-        appends_service_suffix,
-        handles_binary_input
-    ]}].
+    [
+        {unit, [parallel], [
+            service_not_found,
+            resolves_from_file,
+            appends_service_suffix,
+            handles_binary_input
+        ]}
+    ].
 
 init_per_group(_, Config) ->
     Config.
@@ -34,8 +36,10 @@ resolves_from_file(_) ->
     ?assert(erlang:function_exported(erlkoenig_nft_cgroup, service_id, 2)),
     %% service_id/2 accepts a custom slice — verify it returns
     %% a proper error for a non-existent path
-    ?assertMatch({error, {service_not_found, _, _}},
-        erlkoenig_nft_cgroup:service_id("test", "nonexistent.slice")).
+    ?assertMatch(
+        {error, {service_not_found, _, _}},
+        erlkoenig_nft_cgroup:service_id("test", "nonexistent.slice")
+    ).
 
 appends_service_suffix(_) ->
     %% "nginx" should look for "nginx.service"
@@ -52,8 +56,11 @@ handles_binary_input(_) ->
 %% --- Helpers ---
 
 make_tmp_cgroup() ->
-    TmpBase = filename:join("/tmp", "erlkoenig_cgroup_test_" ++
-        integer_to_list(erlang:unique_integer([positive]))),
+    TmpBase = filename:join(
+        "/tmp",
+        "erlkoenig_cgroup_test_" ++
+            integer_to_list(erlang:unique_integer([positive]))
+    ),
     ok = file:make_dir(TmpBase),
     TmpBase.
 

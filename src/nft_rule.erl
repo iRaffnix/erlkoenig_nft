@@ -65,15 +65,19 @@ Example:
     ], Seq).
 """.
 -spec add(0..255, binary(), binary(), [binary()], non_neg_integer()) -> nfnl_msg:nl_msg().
-add(Family, Table, Chain, Expressions, Seq)
-  when is_integer(Family), Family >= 0, Family =< 255,
-       is_binary(Table), byte_size(Table) > 0,
-       is_binary(Chain), byte_size(Chain) > 0,
-       is_list(Expressions),
-       is_integer(Seq), Seq >= 0 ->
-    ExprBin = iolist_to_binary([
-        nfnl_attr:encode_nested(?NFTA_LIST_ELEM, E) || E <- Expressions
-    ]),
+add(Family, Table, Chain, Expressions, Seq) when
+    is_integer(Family),
+    Family >= 0,
+    Family =< 255,
+    is_binary(Table),
+    byte_size(Table) > 0,
+    is_binary(Chain),
+    byte_size(Chain) > 0,
+    is_list(Expressions),
+    is_integer(Seq),
+    Seq >= 0
+->
+    ExprBin = iolist_to_binary([nfnl_attr:encode_nested(?NFTA_LIST_ELEM, E) || E <- Expressions]),
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_RULE_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_RULE_CHAIN, Chain),

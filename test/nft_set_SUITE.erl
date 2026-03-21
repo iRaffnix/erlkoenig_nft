@@ -10,16 +10,33 @@
 -define(SET, <<"banned">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [set_add_ipv4, set_add_with_timeout, set_attrs_decodable,
-                         elem_add_key, elem_add_with_timeout, elem_del_key,
-                         elem_add_batch, vmap_add_with_entries,
-                         lookup_match, lookup_not_match]},
-     {kernel, [], [kernel_create_set, kernel_set_with_timeout,
-                   kernel_add_elem, kernel_del_elem, kernel_set_lookup_rule]}].
+    [
+        {unit, [parallel], [
+            set_add_ipv4,
+            set_add_with_timeout,
+            set_attrs_decodable,
+            elem_add_key,
+            elem_add_with_timeout,
+            elem_del_key,
+            elem_add_batch,
+            vmap_add_with_entries,
+            lookup_match,
+            lookup_not_match
+        ]},
+        {kernel, [], [
+            kernel_create_set,
+            kernel_set_with_timeout,
+            kernel_add_elem,
+            kernel_del_elem,
+            kernel_set_lookup_rule
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -43,19 +60,32 @@ end_per_testcase(_TC, _Config) ->
 %% --- Unit tests ---
 
 set_add_ipv4(_) ->
-    Msg = nft_set:add(1, #{
-        table => <<"fw">>, name => <<"banned">>,
-        type => ipv4_addr, id => 1
-    }, 100),
+    Msg = nft_set:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"banned">>,
+            type => ipv4_addr,
+            id => 1
+        },
+        100
+    ),
     %% NFT_MSG_NEWSET = 9, type = (10 << 8) | 9 = 2569
     <<_Len:32/little, 2569:16/little, _/binary>> = Msg.
 
 set_add_with_timeout(_) ->
-    Msg = nft_set:add(1, #{
-        table => <<"fw">>, name => <<"banned">>,
-        type => ipv4_addr, flags => [timeout],
-        timeout => 3600000, id => 1
-    }, 100),
+    Msg = nft_set:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"banned">>,
+            type => ipv4_addr,
+            flags => [timeout],
+            timeout => 3600000,
+            id => 1
+        },
+        100
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_SET_FLAGS(3) should have timeout bit (0x10)
@@ -65,10 +95,16 @@ set_add_with_timeout(_) ->
     ?assertMatch({11, <<3600000:64/big>>}, lists:keyfind(11, 1, Decoded)).
 
 set_attrs_decodable(_) ->
-    Msg = nft_set:add(1, #{
-        table => <<"fw">>, name => <<"banned">>,
-        type => ipv4_addr, id => 42
-    }, 1),
+    Msg = nft_set:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"banned">>,
+            type => ipv4_addr,
+            id => 42
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     ?assertMatch({1, <<"fw", 0>>}, lists:keyfind(1, 1, Decoded)),
@@ -136,18 +172,27 @@ kernel_create_set(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_set(Pid),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
-    ?assertMatch([_|_], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items]),
+    ?assertMatch([_ | _], [S || #{<<"set">> := S = #{<<"name">> := <<"banned">>}} <- Items]),
     nfnl_server:stop(Pid).
 
 kernel_set_with_timeout(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_set:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?SET,
-            type => ipv4_addr, flags => [timeout],
-            timeout => 300000, id => 1
-        }, Seq) end
+        fun(Seq) ->
+            nft_set:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?SET,
+                    type => ipv4_addr,
+                    flags => [timeout],
+                    timeout => 300000,
+                    id => 1
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Set] = [S || #{<<"set">> := S = #{<<"name">> := ?SET}} <- Items],
@@ -158,9 +203,11 @@ kernel_add_elem(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_set(Pid),
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_set_elem:add(?NFPROTO_INET, ?TABLE, ?SET, <<10,0,0,5>>, Seq) end
+        fun(Seq) -> nft_set_elem:add(?NFPROTO_INET, ?TABLE, ?SET, <<10, 0, 0, 5>>, Seq) end
     ]),
-    Output = os:cmd("nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
+    Output = os:cmd(
+        "nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)
+    ),
     ?assertNotEqual(nomatch, string:find(Output, "10.0.0.5")),
     nfnl_server:stop(Pid).
 
@@ -168,17 +215,21 @@ kernel_del_elem(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_set(Pid),
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_set_elem:add(?NFPROTO_INET, ?TABLE, ?SET, <<10,0,0,5>>, Seq) end
+        fun(Seq) -> nft_set_elem:add(?NFPROTO_INET, ?TABLE, ?SET, <<10, 0, 0, 5>>, Seq) end
     ]),
     %% Verify it's there
-    Output1 = os:cmd("nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
+    Output1 = os:cmd(
+        "nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)
+    ),
     ?assertNotEqual(nomatch, string:find(Output1, "10.0.0.5")),
     %% Delete it
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_set_elem:del(?NFPROTO_INET, ?TABLE, ?SET, <<10,0,0,5>>, Seq) end
+        fun(Seq) -> nft_set_elem:del(?NFPROTO_INET, ?TABLE, ?SET, <<10, 0, 0, 5>>, Seq) end
     ]),
     %% Verify it's gone
-    Output2 = os:cmd("nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)),
+    Output2 = os:cmd(
+        "nft -j list set inet " ++ binary_to_list(?TABLE) ++ " " ++ binary_to_list(?SET)
+    ),
     ?assertEqual(nomatch, string:find(Output2, "10.0.0.5")),
     nfnl_server:stop(Pid).
 
@@ -186,11 +237,20 @@ kernel_set_lookup_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_set(Pid),
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, nft_rules:set_lookup_drop(?SET))
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -204,7 +264,8 @@ kernel_set_lookup_rule(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;
@@ -215,8 +276,16 @@ nft_json(Cmd) ->
 setup_table_and_set(Pid) ->
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_set:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?SET,
-            type => ipv4_addr, id => 1
-        }, Seq) end
+        fun(Seq) ->
+            nft_set:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?SET,
+                    type => ipv4_addr,
+                    id => 1
+                },
+                Seq
+            )
+        end
     ]).

@@ -42,34 +42,38 @@ open(Group) ->
 -doc "Open an NFLOG socket bound to Group with the given CopyRange.".
 -spec open(non_neg_integer(), non_neg_integer()) -> {ok, socket:socket()} | {error, term()}.
 open(Group, CopyRange) ->
-    case socket:open(?AF_NETLINK, raw, ?NETLINK_NETFILTER) of
-        {ok, Sock} ->
-            SaData = <<0:16, 0:32/native, 0:32/native, 0:32/native>>,
-            Addr = #{family => ?AF_NETLINK, addr => SaData},
+    maybe
+        {ok, Sock} ?= socket:open(?AF_NETLINK, raw, ?NETLINK_NETFILTER),
+        SaData = <<0:16, 0:32/native, 0:32/native, 0:32/native>>,
+        Addr = #{family => ?AF_NETLINK, addr => SaData},
+        ok ?=
             case socket:bind(Sock, Addr) of
                 ok ->
-                    ok = send_config_cmd(Sock, ?NFULNL_CFG_CMD_PF_BIND, 0, 2),
-                    ok = send_config_cmd(Sock, ?NFULNL_CFG_CMD_BIND, Group, 0),
-                    ok = send_config_mode(Sock, Group, ?NFULNL_COPY_PACKET, CopyRange),
-                    {ok, Sock};
-                {error, _} = Err ->
+                    ok;
+                {error, _} = BindErr ->
                     _ = socket:close(Sock),
-                    Err
-            end;
-        {error, _} = Err ->
-            Err
+                    BindErr
+            end,
+        ok = send_config_cmd(Sock, ?NFULNL_CFG_CMD_PF_BIND, 0, 2),
+        ok = send_config_cmd(Sock, ?NFULNL_CFG_CMD_BIND, Group, 0),
+        ok = send_config_mode(Sock, Group, ?NFULNL_COPY_PACKET, CopyRange),
+        {ok, Sock}
+    else
+        {error, _} = Err -> Err
     end.
 
 %% --- Internal ---
 
--spec send_config_cmd(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok | {error, term()}.
+-spec send_config_cmd(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
+    ok | {error, term()}.
 send_config_cmd(Sock, Cmd, Group, PF) ->
     NfGenMsg = <<PF:8, 0:8, Group:16/big>>,
     CmdAttr = nfnl_attr:encode(?NFULA_CFG_CMD, <<Cmd:8>>),
     Payload = <<NfGenMsg/binary, CmdAttr/binary>>,
     send_config(Sock, Payload).
 
--spec send_config_mode(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok | {error, term()}.
+-spec send_config_mode(socket:socket(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
+    ok | {error, term()}.
 send_config_mode(Sock, Group, CopyMode, CopyRange) ->
     NfGenMsg = <<0:8, 0:8, Group:16/big>>,
     ModeAttr = nfnl_attr:encode(?NFULA_CFG_MODE, <<CopyRange:32/big, CopyMode:8, 0:8>>),
@@ -82,15 +86,18 @@ send_config(Sock, Payload) ->
     Flags = ?NLM_F_REQUEST bor ?NLM_F_ACK,
     Seq = erlang:system_time(second) band 16#FFFFFFFF,
     Len = 16 + byte_size(Payload),
-    Msg = <<Len:32/little, Type:16/little, Flags:16/little,
-            Seq:32/little, 0:32/little, Payload/binary>>,
+    Msg =
+        <<Len:32/little, Type:16/little, Flags:16/little, Seq:32/little, 0:32/little,
+            Payload/binary>>,
     case socket:send(Sock, Msg) of
         ok ->
             case socket:recv(Sock, 0, ?RECV_TIMEOUT) of
-                {ok, _} -> ok;
+                {ok, _} ->
+                    ok;
                 {error, Reason} ->
                     logger:warning("[nfnl_nflog] config recv failed: ~p", [Reason]),
                     {error, Reason}
             end;
-        Err -> Err
+        Err ->
+            Err
     end.

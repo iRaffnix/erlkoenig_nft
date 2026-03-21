@@ -34,7 +34,6 @@ Corresponds to libnftnl src/expr/objref.c.
 
 -include("nft_constants.hrl").
 
-
 %% --- Public API ---
 
 -doc """

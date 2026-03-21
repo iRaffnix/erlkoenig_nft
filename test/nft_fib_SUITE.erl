@@ -33,23 +33,27 @@ and are accepted by nf_tables via `nft -j`.
 -define(CHAIN, <<"rpf">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        fib_ir_term,
-        fib_rpf_ir_structure,
-        fib_rpf_rule_builder,
-        fib_vm_valid_path,
-        fib_vm_invalid_path,
-        fib_vm_default_zero,
-        fib_chain_rpf_valid,
-        fib_chain_rpf_spoofed
-     ]},
-     {kernel, [], [
-        kernel_fib_rpf_rule
-     ]}].
+    [
+        {unit, [parallel], [
+            fib_ir_term,
+            fib_rpf_ir_structure,
+            fib_rpf_rule_builder,
+            fib_vm_valid_path,
+            fib_vm_invalid_path,
+            fib_vm_default_zero,
+            fib_chain_rpf_valid,
+            fib_chain_rpf_spoofed
+        ]},
+        {kernel, [], [
+            kernel_fib_rpf_rule
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -103,21 +107,24 @@ fib_vm_valid_path(_) ->
     %% A single fib expression with fib_result=2 stores 2 in the register
     Pkt = #{fib_result => 2},
     {ok, Regs} = nft_vm:eval_expr(
-        {fib, #{result => 0, flags => 9, dreg => 1}}, Pkt, nft_vm:new_regs()),
+        {fib, #{result => 0, flags => 9, dreg => 1}}, Pkt, nft_vm:new_regs()
+    ),
     ?assertEqual(<<2:32/native>>, maps:get(1, maps:get(data, Regs))).
 
 fib_vm_invalid_path(_) ->
     %% A single fib expression with fib_result=0 stores 0 in the register
     Pkt = #{fib_result => 0},
     {ok, Regs} = nft_vm:eval_expr(
-        {fib, #{result => 0, flags => 9, dreg => 1}}, Pkt, nft_vm:new_regs()),
+        {fib, #{result => 0, flags => 9, dreg => 1}}, Pkt, nft_vm:new_regs()
+    ),
     ?assertEqual(<<0:32/native>>, maps:get(1, maps:get(data, Regs))).
 
 fib_vm_default_zero(_) ->
     %% When fib_result is not set, defaults to 0
     Pkt = nft_vm_pkt:raw(#{}),
     {ok, Regs} = nft_vm:eval_expr(
-        {fib, #{result => 0, flags => 9, dreg => 1}}, Pkt, nft_vm:new_regs()),
+        {fib, #{result => 0, flags => 9, dreg => 1}}, Pkt, nft_vm:new_regs()
+    ),
     ?assertEqual(<<0:32/native>>, maps:get(1, maps:get(data, Regs))).
 
 fib_chain_rpf_valid(_) ->
@@ -127,7 +134,7 @@ fib_chain_rpf_valid(_) ->
         nft_rules:tcp_accept(80),
         nft_rules:log_drop(<<"DROP: ">>)
     ],
-    Pkt = nft_vm_pkt:tcp(#{saddr => {10,0,0,1}}, #{dport => 80}),
+    Pkt = nft_vm_pkt:tcp(#{saddr => {10, 0, 0, 1}}, #{dport => 80}),
     PktOk = Pkt#{fib_result => 3},
     {accept, _} = nft_vm:eval_chain(Rules, PktOk).
 
@@ -138,7 +145,7 @@ fib_chain_rpf_spoofed(_) ->
         nft_rules:tcp_accept(80),
         nft_rules:log_drop(<<"DROP: ">>)
     ],
-    Pkt = nft_vm_pkt:tcp(#{saddr => {10,0,0,1}}, #{dport => 80}),
+    Pkt = nft_vm_pkt:tcp(#{saddr => {10, 0, 0, 1}}, #{dport => 80}),
     PktSpoofed = Pkt#{fib_result => 0},
     {drop, _} = nft_vm:eval_chain(Rules, PktSpoofed).
 
@@ -151,11 +158,20 @@ kernel_fib_rpf_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => prerouting, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => prerouting,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, nft_rules:fib_rpf_drop())
     ]),
     %% Query the ruleset as JSON
@@ -174,7 +190,8 @@ kernel_fib_rpf_rule(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

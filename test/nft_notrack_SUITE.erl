@@ -25,12 +25,16 @@
 -define(CHAIN, <<"raw_prerouting">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [notrack_ir, notrack_rule_udp, notrack_rule_tcp]},
-     {kernel, [], [kernel_notrack_rule]}].
+    [
+        {unit, [parallel], [notrack_ir, notrack_rule_udp, notrack_rule_tcp]},
+        {kernel, [], [kernel_notrack_rule]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -60,12 +64,28 @@ notrack_ir(_) ->
 notrack_rule_udp(_) ->
     Rule = nft_rules:notrack_rule(53, udp),
     ?assert(is_list(Rule)),
-    ?assert(lists:any(fun({notrack, #{}}) -> true; (_) -> false end, Rule)).
+    ?assert(
+        lists:any(
+            fun
+                ({notrack, #{}}) -> true;
+                (_) -> false
+            end,
+            Rule
+        )
+    ).
 
 notrack_rule_tcp(_) ->
     Rule = nft_rules:notrack_rule(80, tcp),
     ?assert(is_list(Rule)),
-    ?assert(lists:any(fun({notrack, #{}}) -> true; (_) -> false end, Rule)).
+    ?assert(
+        lists:any(
+            fun
+                ({notrack, #{}}) -> true;
+                (_) -> false
+            end,
+            Rule
+        )
+    ).
 
 %% --- Kernel tests ---
 
@@ -73,25 +93,48 @@ kernel_notrack_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => prerouting, type => filter,
-            priority => -300, policy => accept
-        }, Seq) end,
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            nft_rules:notrack_rule(53, udp))
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => prerouting,
+                    type => filter,
+                    priority => -300,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            nft_rules:notrack_rule(53, udp)
+        )
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     %% Find rules in the JSON output
-    RuleExprs = [Expr || #{<<"rule">> := #{<<"chain">> := ?CHAIN,
-                                           <<"expr">> := Expr}} <- Items],
-    ?assertMatch([_|_], RuleExprs),
+    RuleExprs = [
+        Expr
+     || #{
+            <<"rule">> := #{
+                <<"chain">> := ?CHAIN,
+                <<"expr">> := Expr
+            }
+        } <- Items
+    ],
+    ?assertMatch([_ | _], RuleExprs),
     %% The first (and only) rule's expressions should contain a notrack
     [Exprs] = RuleExprs,
-    HasNotrack = lists:any(fun
-        (#{<<"notrack">> := null}) -> true;
-        (_) -> false
-    end, Exprs),
+    HasNotrack = lists:any(
+        fun
+            (#{<<"notrack">> := null}) -> true;
+            (_) -> false
+        end,
+        Exprs
+    ),
     ?assert(HasNotrack),
     nfnl_server:stop(Pid).
 
@@ -99,7 +142,8 @@ kernel_notrack_rule(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

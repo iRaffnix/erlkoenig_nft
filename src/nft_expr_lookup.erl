@@ -32,7 +32,6 @@ Corresponds to libnftnl src/expr/lookup.c.
 
 -include("nft_constants.hrl").
 
-
 %% --- Public API ---
 
 -doc """

@@ -42,13 +42,23 @@ normalize(Bin) when is_binary(Bin), byte_size(Bin) =:= 4 ->
     {ok, Bin};
 normalize(Bin) when is_binary(Bin), byte_size(Bin) =:= 16 ->
     {ok, Bin};
-normalize({A, B, C, D}) when is_integer(A), is_integer(B),
-                              is_integer(C), is_integer(D) ->
+normalize({A, B, C, D}) when
+    is_integer(A),
+    is_integer(B),
+    is_integer(C),
+    is_integer(D)
+->
     {ok, <<A, B, C, D>>};
-normalize({A, B, C, D, E, F, G, H}) when is_integer(A), is_integer(B),
-                                           is_integer(C), is_integer(D),
-                                           is_integer(E), is_integer(F),
-                                           is_integer(G), is_integer(H) ->
+normalize({A, B, C, D, E, F, G, H}) when
+    is_integer(A),
+    is_integer(B),
+    is_integer(C),
+    is_integer(D),
+    is_integer(E),
+    is_integer(F),
+    is_integer(G),
+    is_integer(H)
+->
     {ok, <<A:16, B:16, C:16, D:16, E:16, F:16, G:16, H:16>>};
 normalize(Str) when is_list(Str) ->
     case inet:parse_address(Str) of

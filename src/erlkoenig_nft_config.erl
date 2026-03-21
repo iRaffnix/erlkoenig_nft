@@ -28,19 +28,23 @@ Locates the firewall.term config file using the search order:
 
 -spec config_path() -> {ok, string()} | {error, not_found}.
 config_path() ->
-    Candidates = case os:getenv("ERLKOENIG_CONFIG_DIR") of
-        false ->
-            ["etc/firewall.term",
-             "/opt/erlkoenig_nft/etc/firewall.term"];
-        Dir ->
-            [filename:join(Dir, "firewall.term")]
-    end,
+    Candidates =
+        case os:getenv("ERLKOENIG_CONFIG_DIR") of
+            false ->
+                [
+                    "etc/firewall.term",
+                    "/opt/erlkoenig_nft/etc/firewall.term"
+                ];
+            Dir ->
+                [filename:join(Dir, "firewall.term")]
+        end,
     find_first(Candidates).
 
 -spec find_first([string()]) -> {ok, string()} | {error, not_found}.
-find_first([]) -> {error, not_found};
+find_first([]) ->
+    {error, not_found};
 find_first([Path | Rest]) ->
     case filelib:is_regular(Path) of
-        true  -> {ok, Path};
+        true -> {ok, Path};
         false -> find_first(Rest)
     end.

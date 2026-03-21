@@ -9,14 +9,26 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [add_input_chain, chain_has_hook_nested,
-                         chain_policy_accept, chain_policy_drop]},
-     {kernel, [], [kernel_create_input_chain, kernel_chain_hook,
-                   kernel_chain_policy_accept, kernel_chain_policy_drop]}].
+    [
+        {unit, [parallel], [
+            add_input_chain,
+            chain_has_hook_nested,
+            chain_policy_accept,
+            chain_policy_drop
+        ]},
+        {kernel, [], [
+            kernel_create_input_chain,
+            kernel_chain_hook,
+            kernel_chain_policy_accept,
+            kernel_chain_policy_drop
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -40,18 +52,31 @@ end_per_testcase(_TC, _Config) ->
 %% --- Unit tests ---
 
 add_input_chain(_) ->
-    Msg = nft_chain:add(1, #{
-        table => <<"fw">>, name => <<"input">>,
-        hook => input, type => filter,
-        priority => 0, policy => accept
-    }, 100),
+    Msg = nft_chain:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"input">>,
+            hook => input,
+            type => filter,
+            priority => 0,
+            policy => accept
+        },
+        100
+    ),
     <<_Len:32/little, 2563:16/little, _/binary>> = Msg.
 
 chain_has_hook_nested(_) ->
-    Msg = nft_chain:add(1, #{
-        table => <<"fw">>, name => <<"input">>,
-        hook => input, priority => 100
-    }, 1),
+    Msg = nft_chain:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"input">>,
+            hook => input,
+            priority => 100
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_CHAIN_HOOK(4) should be nested
@@ -64,20 +89,32 @@ chain_has_hook_nested(_) ->
     ?assertMatch({2, <<100:32/big>>}, lists:keyfind(2, 1, HookAttrs)).
 
 chain_policy_accept(_) ->
-    Msg = nft_chain:add(1, #{
-        table => <<"fw">>, name => <<"in">>,
-        hook => input, policy => accept
-    }, 1),
+    Msg = nft_chain:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"in">>,
+            hook => input,
+            policy => accept
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_CHAIN_POLICY(5) = NF_ACCEPT(1)
     ?assertMatch({5, <<1:32/big>>}, lists:keyfind(5, 1, Decoded)).
 
 chain_policy_drop(_) ->
-    Msg = nft_chain:add(1, #{
-        table => <<"fw">>, name => <<"fwd">>,
-        hook => forward, policy => drop
-    }, 1),
+    Msg = nft_chain:add(
+        1,
+        #{
+            table => <<"fw">>,
+            name => <<"fwd">>,
+            hook => forward,
+            policy => drop
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     ?assertMatch({5, <<0:32/big>>}, lists:keyfind(5, 1, Decoded)).
@@ -88,11 +125,20 @@ kernel_create_input_chain(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := ?CHAIN}} <- Items],
@@ -103,11 +149,20 @@ kernel_chain_hook(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 100, policy => accept
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 100,
+                    policy => accept
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := ?CHAIN}} <- Items],
@@ -120,11 +175,20 @@ kernel_chain_policy_accept(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := ?CHAIN}} <- Items],
@@ -135,11 +199,20 @@ kernel_chain_policy_drop(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => <<"fwd">>,
-            hook => forward, type => filter,
-            priority => 0, policy => drop
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => <<"fwd">>,
+                    hook => forward,
+                    type => filter,
+                    priority => 0,
+                    policy => drop
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     [Chain] = [C || #{<<"chain">> := C = #{<<"name">> := <<"fwd">>}} <- Items],
@@ -150,7 +223,8 @@ kernel_chain_policy_drop(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

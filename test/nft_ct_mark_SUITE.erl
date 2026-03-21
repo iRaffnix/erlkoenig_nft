@@ -33,22 +33,26 @@ Kernel group: apply ct mark set/match rules and verify with nft -j.
 -define(REG1, 1).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        ir_ct_mark_read,
-        ir_ct_mark_write,
-        encode_ct_mark_read,
-        encode_ct_mark_write,
-        rules_ct_mark_set,
-        rules_ct_mark_match
-     ]},
-     {kernel, [], [
-        kernel_ct_mark_set_rule,
-        kernel_ct_mark_match_rule
-     ]}].
+    [
+        {unit, [parallel], [
+            ir_ct_mark_read,
+            ir_ct_mark_write,
+            encode_ct_mark_read,
+            encode_ct_mark_write,
+            rules_ct_mark_set,
+            rules_ct_mark_match
+        ]},
+        {kernel, [], [
+            kernel_ct_mark_set_rule,
+            kernel_ct_mark_match_rule
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -91,15 +95,19 @@ encode_ct_mark_read(_) ->
     %% Encoding ct mark read should produce a ct expression with dreg and key=mark(3)
     Term = nft_expr_ir:ct_mark(?REG1),
     {<<"ct">>, Attrs} = encode_decode(Term),
-    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)),  %% dreg=1
-    ?assertMatch({2, <<3:32/big>>}, lists:keyfind(2, 1, Attrs)).  %% key=mark(3)
+    %% dreg=1
+    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)),
+    %% key=mark(3)
+    ?assertMatch({2, <<3:32/big>>}, lists:keyfind(2, 1, Attrs)).
 
 encode_ct_mark_write(_) ->
     %% Encoding ct mark write should produce a ct expression with sreg and key=mark(3)
     Term = nft_expr_ir:ct_mark_set(?REG1),
     {<<"ct">>, Attrs} = encode_decode(Term),
-    ?assertMatch({4, <<1:32/big>>}, lists:keyfind(4, 1, Attrs)),  %% sreg=1
-    ?assertMatch({2, <<3:32/big>>}, lists:keyfind(2, 1, Attrs)).  %% key=mark(3)
+    %% sreg=1
+    ?assertMatch({4, <<1:32/big>>}, lists:keyfind(4, 1, Attrs)),
+    %% key=mark(3)
+    ?assertMatch({2, <<3:32/big>>}, lists:keyfind(2, 1, Attrs)).
 
 %% ===================================================================
 %% Unit tests — Rule builders
@@ -132,11 +140,20 @@ kernel_ct_mark_set_rule(_Config) ->
     Rule = nft_rules:ct_mark_set(16#42),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -155,11 +172,20 @@ kernel_ct_mark_match_rule(_Config) ->
     Rule = nft_rules:ct_mark_match(16#01, nft_expr_ir:accept()),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -186,7 +212,8 @@ encode_decode(Term) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

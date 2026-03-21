@@ -46,91 +46,91 @@ start_link() ->
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     SupFlags = #{
-        strategy  => rest_for_one,
+        strategy => rest_for_one,
         intensity => 5,
-        period    => 60
+        period => 60
     },
     Children = [
         %% 1. pg scope — must be first, others broadcast via pg
         #{
-            id       => pg,
-            start    => {pg, start_link, [erlkoenig_nft]},
-            restart  => permanent,
+            id => pg,
+            start => {pg, start_link, [erlkoenig_nft]},
+            restart => permanent,
             shutdown => 5000,
-            type     => worker,
-            modules  => [pg]
+            type => worker,
+            modules => [pg]
         },
         %% 2. Shared Netlink server — single socket for all ops
         #{
-            id       => erlkoenig_nft_srv,
-            start    => {nfnl_server, start_link, [[{name, erlkoenig_nft_srv}]]},
-            restart  => permanent,
+            id => erlkoenig_nft_srv,
+            start => {nfnl_server, start_link, [[{name, erlkoenig_nft_srv}]]},
+            restart => permanent,
             shutdown => 5000,
-            type     => worker,
-            modules  => [nfnl_server]
+            type => worker,
+            modules => [nfnl_server]
         },
         %% 3. NFLOG receiver — optional, won't take down the tree
         #{
-            id       => erlkoenig_nft_nflog,
-            start    => {erlkoenig_nft_nflog, start_link, [1]},
-            restart  => transient,
+            id => erlkoenig_nft_nflog,
+            start => {erlkoenig_nft_nflog, start_link, [1]},
+            restart => transient,
             shutdown => 5000,
-            type     => worker,
-            modules  => [erlkoenig_nft_nflog]
+            type => worker,
+            modules => [erlkoenig_nft_nflog]
         },
         %% 4. Conntrack event receiver — tracks connections in real time
         #{
-            id       => erlkoenig_nft_ct,
-            start    => {erlkoenig_nft_ct, start_link, []},
-            restart  => transient,
+            id => erlkoenig_nft_ct,
+            start => {erlkoenig_nft_ct, start_link, []},
+            restart => transient,
             shutdown => 5000,
-            type     => worker,
-            modules  => [erlkoenig_nft_ct]
+            type => worker,
+            modules => [erlkoenig_nft_ct]
         },
         %% 5. Conntrack guard — automatic threat detection
         #{
-            id       => erlkoenig_nft_ct_guard,
-            start    => {erlkoenig_nft_ct_guard, start_link, [#{}]},
-            restart  => transient,
+            id => erlkoenig_nft_ct_guard,
+            start => {erlkoenig_nft_ct_guard, start_link, [#{}]},
+            restart => transient,
             shutdown => 5000,
-            type     => worker,
-            modules  => [erlkoenig_nft_ct_guard]
+            type => worker,
+            modules => [erlkoenig_nft_ct_guard]
         },
         %% 6. Dynamic supervisor for per-counter workers
         #{
-            id       => erlkoenig_nft_watch_sup,
-            start    => {erlkoenig_nft_watch_sup, start_link, []},
-            restart  => permanent,
+            id => erlkoenig_nft_watch_sup,
+            start => {erlkoenig_nft_watch_sup, start_link, []},
+            restart => permanent,
             shutdown => infinity,
-            type     => supervisor,
-            modules  => [erlkoenig_nft_watch_sup]
+            type => supervisor,
+            modules => [erlkoenig_nft_watch_sup]
         },
         %% 7. Audit log — records firewall operations
         #{
-            id       => erlkoenig_nft_audit,
-            start    => {erlkoenig_nft_audit, start_link, []},
-            restart  => permanent,
+            id => erlkoenig_nft_audit,
+            start => {erlkoenig_nft_audit, start_link, []},
+            restart => permanent,
             shutdown => 5000,
-            type     => worker,
-            modules  => [erlkoenig_nft_audit]
+            type => worker,
+            modules => [erlkoenig_nft_audit]
         },
         %% 8. Firewall config owner — last, depends on all above
         #{
-            id       => erlkoenig_nft_firewall,
-            start    => {erlkoenig_nft_firewall, start_link, []},
-            restart  => permanent,
+            id => erlkoenig_nft_firewall,
+            start => {erlkoenig_nft_firewall, start_link, []},
+            restart => permanent,
             shutdown => 10000,
-            type     => worker,
-            modules  => [erlkoenig_nft_firewall]
+            type => worker,
+            modules => [erlkoenig_nft_firewall]
         },
         %% 8. API socket server — JSON over Unix domain socket
         #{
-            id       => erlkoenig_nft_api,
-            start    => {erlkoenig_nft_api, start_link, []},
-            restart  => permanent,
+            id => erlkoenig_nft_api,
+            start => {erlkoenig_nft_api, start_link, []},
+            restart => permanent,
             shutdown => 5000,
-            type     => worker,
-            modules  => [erlkoenig_nft_api]
+            type => worker,
+            modules => [erlkoenig_nft_api]
         }
     ],
     {ok, {SupFlags, Children}}.

@@ -53,7 +53,6 @@ Corresponds to libnftnl src/expr/cmp.c.
 
 -include("nft_constants.hrl").
 
-
 %% --- Public API ---
 
 -doc "Compare register equal to value.".
@@ -94,10 +93,13 @@ Example:
     nft_expr_cmp:cmp(eq, 1, <<0, 80>>)
 """.
 -spec cmp(cmp_op(), non_neg_integer(), binary()) -> binary().
-cmp(Op, Reg, Value)
-  when is_atom(Op), is_integer(Reg), Reg >= 0, is_binary(Value) ->
-    DataNest = nfnl_attr:encode_nested(?NFTA_CMP_DATA,
-        nfnl_attr:encode(?NFTA_DATA_VALUE, Value)),
+cmp(Op, Reg, Value) when
+    is_atom(Op), is_integer(Reg), Reg >= 0, is_binary(Value)
+->
+    DataNest = nfnl_attr:encode_nested(
+        ?NFTA_CMP_DATA,
+        nfnl_attr:encode(?NFTA_DATA_VALUE, Value)
+    ),
     Attrs = iolist_to_binary([
         nfnl_attr:encode_u32(?NFTA_CMP_SREG, Reg),
         nfnl_attr:encode_u32(?NFTA_CMP_OP, op_val(Op)),
@@ -108,9 +110,9 @@ cmp(Op, Reg, Value)
 %% --- Internal ---
 
 -spec op_val(cmp_op()) -> 0..5.
-op_val(eq)  -> ?NFT_CMP_EQ;
+op_val(eq) -> ?NFT_CMP_EQ;
 op_val(neq) -> ?NFT_CMP_NEQ;
-op_val(lt)  -> ?NFT_CMP_LT;
+op_val(lt) -> ?NFT_CMP_LT;
 op_val(lte) -> ?NFT_CMP_LTE;
-op_val(gt)  -> ?NFT_CMP_GT;
+op_val(gt) -> ?NFT_CMP_GT;
 op_val(gte) -> ?NFT_CMP_GTE.

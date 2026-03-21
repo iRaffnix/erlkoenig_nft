@@ -5,22 +5,24 @@
 -compile(export_all).
 
 all() ->
-    [normalize_v4_tuple,
-     normalize_v4_binary,
-     normalize_v4_string,
-     normalize_v4_binstring,
-     normalize_v6_tuple,
-     normalize_v6_binary,
-     normalize_v6_string,
-     normalize_v6_binstring,
-     normalize_v6_compressed,
-     normalize_error,
-     format_v4,
-     format_v6,
-     version_v4,
-     version_v6,
-     af_v4,
-     af_v6].
+    [
+        normalize_v4_tuple,
+        normalize_v4_binary,
+        normalize_v4_string,
+        normalize_v4_binstring,
+        normalize_v6_tuple,
+        normalize_v6_binary,
+        normalize_v6_string,
+        normalize_v6_binstring,
+        normalize_v6_compressed,
+        normalize_error,
+        format_v4,
+        format_v6,
+        version_v4,
+        version_v6,
+        af_v4,
+        af_v6
+    ].
 
 %% --- normalize IPv4 ---
 
@@ -39,8 +41,10 @@ normalize_v4_binstring(_) ->
 %% --- normalize IPv6 ---
 
 normalize_v6_tuple(_) ->
-    ?assertEqual({ok, <<16#2001:16, 16#0db8:16, 0:16, 0:16, 0:16, 0:16, 0:16, 16#0001:16>>},
-                 erlkoenig_nft_ip:normalize({16#2001, 16#0db8, 0, 0, 0, 0, 0, 1})).
+    ?assertEqual(
+        {ok, <<16#2001:16, 16#0db8:16, 0:16, 0:16, 0:16, 0:16, 0:16, 16#0001:16>>},
+        erlkoenig_nft_ip:normalize({16#2001, 16#0db8, 0, 0, 0, 0, 0, 1})
+    ).
 
 normalize_v6_binary(_) ->
     Bin = <<16#2001:16, 16#0db8:16, 0:16, 0:16, 0:16, 0:16, 0:16, 1:16>>,

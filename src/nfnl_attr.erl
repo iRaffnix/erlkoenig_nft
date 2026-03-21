@@ -33,12 +33,14 @@ Integer attributes use big-endian (network byte order), matching the
 htonl()/htobe64() calls in libnftnl's build_payload functions.
 """.
 
--export([encode/2,
-         encode_str/2,
-         encode_u32/2,
-         encode_u64/2,
-         encode_nested/2,
-         decode/1]).
+-export([
+    encode/2,
+    encode_str/2,
+    encode_u32/2,
+    encode_u64/2,
+    encode_nested/2,
+    decode/1
+]).
 
 -export_type([nla_type/0, nla/0]).
 
@@ -48,8 +50,9 @@ htonl()/htobe64() calls in libnftnl's build_payload functions.
 %% Attribute type, 14-bit range. The upper two bits are flags
 %% (NLA_F_NESTED = 0x8000, NLA_F_NET_BYTEORDER = 0x4000).
 
--type nla() :: {nla_type(), binary()}
-             | {nla_type(), nested, [nla()]}.
+-type nla() ::
+    {nla_type(), binary()}
+    | {nla_type(), nested, [nla()]}.
 %% Decoded attribute. Nested attributes carry their children as a list.
 
 %% --- Constants ---
@@ -67,17 +70,17 @@ encode(Type, Data) when is_integer(Type), Type >= 0, is_binary(Data) ->
     <<Len:16/little, Type:16/little, Data/binary, (padding(Len))/binary>>.
 
 -doc "Encode a null-terminated string attribute.".
--spec encode_str(nla_type(), binary()) -> binary().
+-spec encode_str(nla_type(), binary()) -> <<_:32, _:_*8>>.
 encode_str(Type, Str) when is_binary(Str) ->
     encode(Type, <<Str/binary, 0>>).
 
 -doc "Encode a 32-bit big-endian integer attribute (matches C htonl).".
--spec encode_u32(nla_type(), non_neg_integer()) -> binary().
+-spec encode_u32(nla_type(), non_neg_integer()) -> <<_:32, _:_*8>>.
 encode_u32(Type, Val) when is_integer(Val), Val >= 0 ->
     encode(Type, <<Val:32/big>>).
 
 -doc "Encode a 64-bit big-endian integer attribute (matches C htobe64).".
--spec encode_u64(nla_type(), non_neg_integer()) -> binary().
+-spec encode_u64(nla_type(), non_neg_integer()) -> <<_:32, _:_*8>>.
 encode_u64(Type, Val) when is_integer(Val), Val >= 0 ->
     encode(Type, <<Val:64/big>>).
 
@@ -97,19 +100,21 @@ Returns an empty list for empty input.
 -spec decode(binary()) -> [nla()].
 decode(<<>>) ->
     [];
-decode(<<Len:16/little, _Type:16/little, _/binary>> = Bin)
-  when Len < ?NLA_HEADER_SIZE; Len > byte_size(Bin) + 0 ->
+decode(<<Len:16/little, _Type:16/little, _/binary>> = Bin) when
+    Len < ?NLA_HEADER_SIZE; Len > byte_size(Bin) + 0
+->
     error({invalid_nla, Len, byte_size(Bin)});
 decode(<<Len:16/little, Type:16/little, Rest/binary>>) ->
     DataLen = Len - ?NLA_HEADER_SIZE,
     PadLen = pad_size(Len),
     <<Data:DataLen/binary, _Pad:PadLen/binary, Tail/binary>> = Rest,
-    Attr = case Type band ?NLA_F_NESTED of
-        ?NLA_F_NESTED ->
-            {Type band 16#3FFF, nested, decode(Data)};
-        0 ->
-            {Type, Data}
-    end,
+    Attr =
+        case Type band ?NLA_F_NESTED of
+            ?NLA_F_NESTED ->
+                {Type band 16#3FFF, nested, decode(Data)};
+            0 ->
+                {Type, Data}
+        end,
     [Attr | decode(Tail)].
 
 %% --- Internal ---

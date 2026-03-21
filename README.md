@@ -58,20 +58,22 @@ erlkoenig_nft:reload().
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iRaffnix/erlkoenig_nft/main/install.sh | sudo sh
+curl -fsSLO https://raw.githubusercontent.com/iRaffnix/erlkoenig_nft/main/install.sh
+# Review the script, then run:
+sudo sh install.sh --version v0.5.0
 ```
 
 Auto-detects architecture (x86_64/aarch64) and libc (glibc/musl), downloads
-the matching release, installs the CLI to `/usr/local/bin/erlkoenig`, sets up
-a default config, and optionally installs the systemd unit.
+the matching release, installs the CLI to `/usr/local/bin/erlkoenig-nft`,
+and optionally installs the systemd unit.
 
 No Erlang or Elixir install required — the release bundles its own runtime.
 
 | Archive | For |
 |---------|-----|
-| `erlkoenig_nft-v*-x86_64-glibc.tar.gz` | Standard Linux (Debian, Ubuntu, Fedora, ...) |
+| `erlkoenig_nft-v*-x86_64-linux.tar.gz` | Standard Linux (Debian, Ubuntu, Fedora, ...) |
 | `erlkoenig_nft-v*-x86_64-musl.tar.gz` | Alpine / static linking |
-| `erlkoenig_nft-v*-aarch64-glibc.tar.gz` | ARM64 Linux (Raspberry Pi, AWS Graviton, ...) |
+| `erlkoenig_nft-v*-aarch64-linux.tar.gz` | ARM64 Linux (Raspberry Pi, AWS Graviton, ...) |
 
 Options: `--prefix /path` (default `/opt/erlkoenig_nft`), `--version vX.Y.Z`,
 `--no-systemd`.
@@ -79,10 +81,10 @@ Options: `--prefix /path` (default `/opt/erlkoenig_nft`), `--version vX.Y.Z`,
 After install:
 
 ```bash
-sudo erlkoenig_nft start        # start the daemon
-sudo erlkoenig_nft status       # check status
-sudo nft list ruleset            # verify kernel rules
-erlkoenig --help                 # CLI tool
+sudo systemctl start erlkoenig_nft    # start the daemon
+sudo systemctl status erlkoenig_nft   # check status
+sudo nft list ruleset                  # verify kernel rules
+erlkoenig-nft --help                   # CLI tool
 ```
 
 ## Build from Source
@@ -211,7 +213,7 @@ ErlkoenigNft.Firewall.Profiles.get(:standard, allow_udp: [51820])
 
 ## Examples
 
-All 15 scenarios ship as Elixir DSL configs in [`examples/`](examples/):
+All 17 scenarios ship as Elixir DSL configs in [`examples/`](examples/):
 
 | Scenario | Config |
 |----------|--------|
@@ -230,6 +232,8 @@ All 15 scenarios ship as Elixir DSL configs in [`examples/`](examples/):
 | IDS gateway (NFQUEUE + OS fingerprint) | [`examples/ids_gateway.exs`](examples/ids_gateway.exs) |
 | Service mesh (cgroups + flowtables) | [`examples/service_mesh.exs`](examples/service_mesh.exs) |
 | Anti-spoofing edge router (FIB + vmaps) | [`examples/anti_spoofing.exs`](examples/anti_spoofing.exs) |
+| NAT router (DNAT + SNAT) | [`examples/nat_router.exs`](examples/nat_router.exs) |
+| Zone router (multi-zone segmentation) | [`examples/zone_router.exs`](examples/zone_router.exs) |
 
 ## Erlang Term Config
 
@@ -397,7 +401,7 @@ BanPkt = nft_vm_pkt:with_sets(
 356 unit tests + 48 kernel integration tests + DSL tests:
 
 ```bash
-make check            # ct + dialyzer + DSL tests
+make check            # lint + eunit + ct + DSL tests
 make test             # Erlang common test (unit, kernel tests skipped without root)
 sudo make test        # includes kernel integration tests (requires root)
 make test-dsl         # Elixir DSL tests only
@@ -495,7 +499,7 @@ consolidated in a single header (`include/nft_constants.hrl`).
 | Requirement | Minimum |
 |-------------|---------|
 | Linux | >= 5.0 (nf_tables) |
-| Erlang/OTP | >= 27 |
+| Erlang/OTP | >= 28 |
 | Elixir | >= 1.18 (DSL only, optional) |
 | Capabilities | CAP_NET_ADMIN (not needed for tests) |
 

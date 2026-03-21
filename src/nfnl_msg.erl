@@ -34,9 +34,11 @@ Batch begin/end are special control messages from subsystem 0
 that tell the kernel to process enclosed messages atomically.
 """.
 
--export([build_hdr/5,
-         batch_begin/1,
-         batch_end/1]).
+-export([
+    build_hdr/5,
+    batch_begin/1,
+    batch_end/1
+]).
 
 -export_type([nl_msg/0]).
 
@@ -58,14 +60,18 @@ Flags is a bitmask of NLM_F_* values.
 Attrs is the pre-encoded attribute binary from nfnl_attr.
 """.
 -spec build_hdr(0..255, 0..255, non_neg_integer(), non_neg_integer(), binary()) -> nl_msg().
-build_hdr(MsgType, Family, Flags, Seq, Attrs)
-  when is_integer(MsgType), is_integer(Family),
-       is_integer(Flags), is_integer(Seq), is_binary(Attrs) ->
+build_hdr(MsgType, Family, Flags, Seq, Attrs) when
+    is_integer(MsgType),
+    is_integer(Family),
+    is_integer(Flags),
+    is_integer(Seq),
+    is_binary(Attrs)
+->
     Type = (?NFNL_SUBSYS_NFTABLES bsl 8) bor MsgType,
     NfGenMsg = <<Family:8, ?NFNETLINK_V0:8, 0:16/big>>,
     Len = ?NLMSGHDR_SIZE + ?NFGENMSG_SIZE + byte_size(Attrs),
-    <<Len:32/little, Type:16/little, Flags:16/little,
-      Seq:32/little, 0:32/little, NfGenMsg/binary, Attrs/binary>>.
+    <<Len:32/little, Type:16/little, Flags:16/little, Seq:32/little, 0:32/little, NfGenMsg/binary,
+        Attrs/binary>>.
 
 -doc """
 Build a batch begin control message.
@@ -73,12 +79,12 @@ Build a batch begin control message.
 Must precede any group of nf_tables messages. The kernel processes
 all messages between batch_begin and batch_end atomically.
 """.
--spec batch_begin(non_neg_integer()) -> nl_msg().
+-spec batch_begin(non_neg_integer()) -> <<_:64, _:_*8>>.
 batch_begin(Seq) ->
     batch_ctrl(?NFNL_MSG_BATCH_BEGIN, Seq).
 
 -doc "Build a batch end control message.".
--spec batch_end(non_neg_integer()) -> nl_msg().
+-spec batch_end(non_neg_integer()) -> <<_:64, _:_*8>>.
 batch_end(Seq) ->
     batch_ctrl(?NFNL_MSG_BATCH_END, Seq).
 
@@ -89,5 +95,5 @@ batch_ctrl(MsgType, Seq) ->
     Type = (?NFNL_SUBSYS_NONE bsl 8) bor MsgType,
     NfGenMsg = <<0:8, ?NFNETLINK_V0:8, ?NFNL_SUBSYS_NFTABLES:16/big>>,
     Len = ?NLMSGHDR_SIZE + ?NFGENMSG_SIZE,
-    <<Len:32/little, Type:16/little, ?NLM_F_REQUEST:16/little,
-      Seq:32/little, 0:32/little, NfGenMsg/binary>>.
+    <<Len:32/little, Type:16/little, ?NLM_F_REQUEST:16/little, Seq:32/little, 0:32/little,
+        NfGenMsg/binary>>.

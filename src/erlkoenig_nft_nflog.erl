@@ -55,6 +55,7 @@ stop(Pid) ->
 %% --- gen_server callbacks ---
 
 init(Group) ->
+    proc_lib:set_label(erlkoenig_nft_nflog),
     case open_nflog_socket(Group) of
         {ok, Sock} ->
             %% Start async recv loop
@@ -117,10 +118,13 @@ open_nflog_socket(Group) ->
 %% --- Internal: Message processing ---
 
 -spec process_messages(binary()) -> ok.
-process_messages(<<>>) -> ok;
-process_messages(<<Len:32/little, Type:16/little, _Flags:16/little,
-                   _Seq:32/little, _Pid:32/little, Rest/binary>>)
-  when Len >= 20 ->
+process_messages(<<>>) ->
+    ok;
+process_messages(
+    <<Len:32/little, Type:16/little, _Flags:16/little, _Seq:32/little, _Pid:32/little, Rest/binary>>
+) when
+    Len >= 20
+->
     Subsys = Type bsr 8,
     MsgType = Type band 16#FF,
     PayloadLen = Len - 16,
@@ -140,66 +144,78 @@ process_messages(<<Len:32/little, Type:16/little, _Flags:16/little,
         false ->
             ok
     end;
-process_messages(_) -> ok.
+process_messages(_) ->
+    ok.
 
--spec parse_packet([tuple()]) -> map().
+-spec parse_packet([{char(), binary()} | {char(), nested, [any()]}]) -> #{dport => char(), dst => binary(), iface => non_neg_integer(), len => non_neg_integer(), prefix => binary(), proto => binary(), sport => char(), src => binary()}.
 parse_packet(Attrs) ->
     M = #{},
-    M1 = case lists:keyfind(?NFULA_PREFIX, 1, Attrs) of
-        {_, PBin} -> M#{prefix => strip_null(PBin)};
-        _ -> M
-    end,
-    M2 = case lists:keyfind(?NFULA_IFINDEX_INDEV, 1, Attrs) of
-        {_, <<Idx:32/big>>} -> M1#{iface => Idx};
-        _ -> M1
-    end,
+    M1 =
+        case lists:keyfind(?NFULA_PREFIX, 1, Attrs) of
+            {_, PBin} -> M#{prefix => strip_null(PBin)};
+            _ -> M
+        end,
+    M2 =
+        case lists:keyfind(?NFULA_IFINDEX_INDEV, 1, Attrs) of
+            {_, <<Idx:32/big>>} -> M1#{iface => Idx};
+            _ -> M1
+        end,
     case lists:keyfind(?NFULA_PAYLOAD, 1, Attrs) of
         {_, PayloadBin} -> parse_ip_packet(M2, PayloadBin);
         _ -> M2
     end.
 
--spec parse_ip_packet(map(), binary()) -> map().
-parse_ip_packet(M, <<4:4, IHL:4, _TOS:8, TotalLen:16/big,
-                      _ID:16, _FragOff:16, _TTL:8, Proto:8, _Checksum:16,
-                      SrcA:8, SrcB:8, SrcC:8, SrcD:8,
-                      DstA:8, DstB:8, DstC:8, DstD:8,
-                      Rest/binary>>) ->
+-spec parse_ip_packet(#{iface => non_neg_integer(), prefix => binary()}, binary()) -> #{dport => char(), dst => binary(), iface => non_neg_integer(), len => non_neg_integer(), prefix => binary(), proto => binary(), sport => char(), src => binary()}.
+parse_ip_packet(
+    M,
+    <<4:4, IHL:4, _TOS:8, TotalLen:16/big, _ID:16, _FragOff:16, _TTL:8, Proto:8, _Checksum:16,
+        SrcA:8, SrcB:8, SrcC:8, SrcD:8, DstA:8, DstB:8, DstC:8, DstD:8, Rest/binary>>
+) ->
     Src = iolist_to_binary(erlkoenig_nft_ip:format(<<SrcA, SrcB, SrcC, SrcD>>)),
     Dst = iolist_to_binary(erlkoenig_nft_ip:format(<<DstA, DstB, DstC, DstD>>)),
     M1 = M#{src => Src, dst => Dst, len => TotalLen, proto => proto_name(Proto)},
     HeaderLen = IHL * 4,
     Skip = HeaderLen - 20,
     case {Proto, Rest} of
-        {P, <<_:Skip/binary, SPort:16/big, DPort:16/big, _/binary>>}
-          when P =:= ?IPPROTO_TCP; P =:= ?IPPROTO_UDP ->
+        {P, <<_:Skip/binary, SPort:16/big, DPort:16/big, _/binary>>} when
+            P =:= ?IPPROTO_TCP; P =:= ?IPPROTO_UDP
+        ->
             M1#{sport => SPort, dport => DPort};
         _ ->
             M1
     end;
-parse_ip_packet(M, <<6:4, _TC:8, _FL:20, PayloadLen:16/big, NextHeader:8,
-                      _HopLimit:8, Src:16/binary, Dst:16/binary,
-                      Rest/binary>>) ->
+parse_ip_packet(
+    M,
+    <<6:4, _TC:8, _FL:20, PayloadLen:16/big, NextHeader:8, _HopLimit:8, Src:16/binary,
+        Dst:16/binary, Rest/binary>>
+) ->
     SrcStr = iolist_to_binary(erlkoenig_nft_ip:format(Src)),
     DstStr = iolist_to_binary(erlkoenig_nft_ip:format(Dst)),
-    M1 = M#{src => SrcStr, dst => DstStr, len => 40 + PayloadLen,
-             proto => proto_name(NextHeader)},
+    M1 = M#{
+        src => SrcStr,
+        dst => DstStr,
+        len => 40 + PayloadLen,
+        proto => proto_name(NextHeader)
+    },
     case {NextHeader, Rest} of
-        {P, <<SPort:16/big, DPort:16/big, _/binary>>}
-          when P =:= ?IPPROTO_TCP; P =:= ?IPPROTO_UDP ->
+        {P, <<SPort:16/big, DPort:16/big, _/binary>>} when
+            P =:= ?IPPROTO_TCP; P =:= ?IPPROTO_UDP
+        ->
             M1#{sport => SPort, dport => DPort};
         _ ->
             M1
     end;
-parse_ip_packet(M, _) -> M.
+parse_ip_packet(M, _) ->
+    M.
 
--spec proto_name(non_neg_integer()) -> binary().
-proto_name(?IPPROTO_TCP)  -> <<"tcp">>;
-proto_name(?IPPROTO_UDP)  -> <<"udp">>;
+-spec proto_name(byte()) -> binary().
+proto_name(?IPPROTO_TCP) -> <<"tcp">>;
+proto_name(?IPPROTO_UDP) -> <<"udp">>;
 proto_name(?IPPROTO_ICMP) -> <<"icmp">>;
 proto_name(58) -> <<"icmpv6">>;
 proto_name(N) -> integer_to_binary(N).
 
--spec broadcast(term()) -> ok.
+-spec broadcast({nflog_event, #{dport => char(), dst => binary(), iface => non_neg_integer(), len => non_neg_integer(), prefix => binary(), proto => binary(), sport => char(), src => binary()}}) -> ok.
 broadcast(Msg) ->
     try
         Members = pg:get_members(erlkoenig_nft, nflog_events),

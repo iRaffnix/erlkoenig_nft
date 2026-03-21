@@ -17,23 +17,33 @@ jobs:
         target:
           - name: x86_64-linux
             runner: ubuntu-22.04
+            image: hexpm/elixir:1.18.4-erlang-28.4.1-debian-bookworm-20260316-slim
+            deps: apt-get update && apt-get install -y git make curl
+          - name: x86_64-musl
+            runner: ubuntu-22.04
+            image: hexpm/elixir:1.18.4-erlang-28.4.1-alpine-3.21.6
+            deps: apk add --no-cache git make curl
           - name: aarch64-linux
             runner: ubuntu-22.04-arm
+            image: hexpm/elixir:1.18.4-erlang-28.4.1-debian-bookworm-20260316-slim
+            deps: apt-get update && apt-get install -y git make curl
+
+    container:
+      image: ${{ matrix.target.image }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Beam
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '27'
-          elixir-version: '1.18'
-          rebar3-version: '3.24'
+      - name: Install build deps
+        run: ${{ matrix.target.deps }}
+
+      - name: Install rebar3
+        run: |
+          curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3
+          chmod +x /usr/local/bin/rebar3
 
       - name: Build CLI escript
-        run: cd dsl && mix escript.build
-        env:
-          MIX_ENV: prod
+        run: cd dsl && MIX_ENV=prod mix escript.build
 
       - name: Build release
         run: rebar3 as prod tar

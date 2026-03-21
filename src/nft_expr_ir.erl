@@ -55,19 +55,24 @@ Example:
     ct_mark/1,
     ct_mark_set/1,
     %% Payload convenience — IPv4
-    tcp_sport/1, tcp_dport/1,
-    udp_sport/1, udp_dport/1,
-    ip_saddr/1, ip_daddr/1,
+    tcp_sport/1,
+    tcp_dport/1,
+    udp_sport/1,
+    udp_dport/1,
+    ip_saddr/1,
+    ip_daddr/1,
     ip_protocol/1,
     %% Payload convenience — IPv6
-    ip6_saddr/1, ip6_daddr/1,
+    ip6_saddr/1,
+    ip6_daddr/1,
     ip6_next_header/1,
     %% Consumers
     cmp/3,
     cmp_neq/2,
     range/4,
     bitwise/4,
-    lookup/2, lookup_inv/2,
+    lookup/2,
+    lookup_inv/2,
     vmap_lookup/2,
     concat_lookup/3,
     %% Actions
@@ -87,7 +92,8 @@ Example:
     reject/0, reject/2,
     immediate_data/2,
     %% NAT / Masquerade / Redirect
-    snat/2, snat/3, dnat/2, dnat/3,
+    snat/2, snat/3,
+    dnat/2, dnat/3,
     masq/0, masq/2,
     redir/1,
     %% Queue / Quota / Hash
@@ -153,7 +159,8 @@ Example:
 %% ===================================================================
 
 -doc "Load bytes from a packet layer into a register.".
--spec payload(atom() | non_neg_integer(), non_neg_integer(), pos_integer(), non_neg_integer()) -> expr().
+-spec payload(atom() | non_neg_integer(), non_neg_integer(), pos_integer(), non_neg_integer()) ->
+    expr().
 payload(Base, Offset, Len, DReg) ->
     {payload, #{base => Base, offset => Offset, len => Len, dreg => DReg}}.
 
@@ -180,43 +187,43 @@ ct_mark_set(SReg) ->
 %% --- Payload convenience ---
 
 -doc "Load TCP source port (2 bytes) into register.".
--spec tcp_sport(non_neg_integer()) -> expr().
+-spec tcp_sport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 tcp_sport(Reg) -> payload(transport, 0, 2, Reg).
 
 -doc "Load TCP destination port (2 bytes) into register.".
--spec tcp_dport(non_neg_integer()) -> expr().
+-spec tcp_dport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 tcp_dport(Reg) -> payload(transport, 2, 2, Reg).
 
 -doc "Load UDP source port (2 bytes) into register.".
--spec udp_sport(non_neg_integer()) -> expr().
+-spec udp_sport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 udp_sport(Reg) -> payload(transport, 0, 2, Reg).
 
 -doc "Load UDP destination port (2 bytes) into register.".
--spec udp_dport(non_neg_integer()) -> expr().
+-spec udp_dport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 udp_dport(Reg) -> payload(transport, 2, 2, Reg).
 
 -doc "Load IPv4 source address (4 bytes) into register.".
--spec ip_saddr(non_neg_integer()) -> expr().
+-spec ip_saddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 ip_saddr(Reg) -> payload(network, 12, 4, Reg).
 
 -doc "Load IPv4 destination address (4 bytes) into register.".
--spec ip_daddr(non_neg_integer()) -> expr().
+-spec ip_daddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 ip_daddr(Reg) -> payload(network, 16, 4, Reg).
 
 -doc "Load IPv4 protocol field (1 byte) into register.".
--spec ip_protocol(non_neg_integer()) -> expr().
+-spec ip_protocol(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 ip_protocol(Reg) -> payload(network, 9, 1, Reg).
 
 -doc "Load IPv6 source address (16 bytes) into register.".
--spec ip6_saddr(non_neg_integer()) -> expr().
+-spec ip6_saddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 ip6_saddr(Reg) -> payload(network, 8, 16, Reg).
 
 -doc "Load IPv6 destination address (16 bytes) into register.".
--spec ip6_daddr(non_neg_integer()) -> expr().
+-spec ip6_daddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 ip6_daddr(Reg) -> payload(network, 24, 16, Reg).
 
 -doc "Load IPv6 next-header field (1 byte) into register.".
--spec ip6_next_header(non_neg_integer()) -> expr().
+-spec ip6_next_header(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
 ip6_next_header(Reg) -> payload(network, 6, 1, Reg).
 
 %% ===================================================================
@@ -229,7 +236,7 @@ cmp(Op, SReg, Data) ->
     {cmp, #{sreg => SReg, op => Op, data => Data}}.
 
 -doc "Shorthand: compare register not-equal to zero.".
--spec cmp_neq(non_neg_integer(), binary()) -> expr().
+-spec cmp_neq(non_neg_integer(), binary()) -> {cmp, #{sreg := non_neg_integer(), op := neq, data := binary()}}.
 cmp_neq(SReg, Data) ->
     cmp(neq, SReg, Data).
 
@@ -281,11 +288,16 @@ concat_lookup(SetName, KeyExprs, Verdict) ->
     %% The kernel uses NFT_REG32 sub-registers; each 4 bytes = 1 reg slot.
     %% We assign registers sequentially, packing at 4-byte boundaries.
     {LoadExprs, TotalLen} = build_concat_loads(KeyExprs, 1, [], 0),
-    LoadExprs ++ [
-        {lookup, #{sreg => 1, set => SetName, concat => true,
-                   key_len => TotalLen}},
-        {immediate, #{verdict => Verdict}}
-    ].
+    LoadExprs ++
+        [
+            {lookup, #{
+                sreg => 1,
+                set => SetName,
+                concat => true,
+                key_len => TotalLen
+            }},
+            {immediate, #{verdict => Verdict}}
+        ].
 
 %% Build load expressions for concatenated fields.
 %% Each field is loaded into the next available register.
@@ -297,8 +309,12 @@ build_concat_loads([{LoadExpr0, FieldLen} | Rest], Reg, Acc, TotalLen) ->
     LoadExpr = set_dreg(LoadExpr0, Reg),
     %% Each register holds 4 bytes; advance by ceil(FieldLen/4) registers
     RegsUsed = (FieldLen + 3) div 4,
-    build_concat_loads(Rest, Reg + RegsUsed, [LoadExpr | Acc],
-                       TotalLen + FieldLen).
+    build_concat_loads(
+        Rest,
+        Reg + RegsUsed,
+        [LoadExpr | Acc],
+        TotalLen + FieldLen
+    ).
 
 %% Replace the destination register in an expression.
 set_dreg({Type, Opts}, NewDReg) ->
@@ -309,7 +325,7 @@ set_dreg({Type, Opts}, NewDReg) ->
 %% ===================================================================
 
 -doc "Zero-initialized anonymous counter.".
--spec counter() -> expr().
+-spec counter() -> {counter, #{packets := 0, bytes := 0}}.
 counter() ->
     {counter, #{packets => 0, bytes => 0}}.
 
@@ -329,7 +345,7 @@ objref_quota(Name) ->
     {objref, #{type => quota, name => Name}}.
 
 -doc "Log with default settings.".
--spec log() -> expr().
+-spec log() -> {log, #{}}.
 log() ->
     {log, #{}}.
 
@@ -359,17 +375,17 @@ limit_over(Rate, Burst) ->
 %% ===================================================================
 
 -doc "Accept the packet.".
--spec accept() -> expr().
+-spec accept() -> {immediate, #{verdict := accept}}.
 accept() ->
     {immediate, #{verdict => accept}}.
 
 -doc "Drop the packet.".
--spec drop() -> expr().
+-spec drop() -> {immediate, #{verdict := drop}}.
 drop() ->
     {immediate, #{verdict => drop}}.
 
 -doc "Return to calling chain.".
--spec return() -> expr().
+-spec return() -> {immediate, #{verdict := return}}.
 return() ->
     {immediate, #{verdict => return}}.
 
@@ -384,7 +400,7 @@ goto(Chain) ->
     {immediate, #{verdict => {goto, Chain}}}.
 
 -doc "Drop and send ICMP unreachable.".
--spec reject() -> expr().
+-spec reject() -> {reject, #{type := 0, icmp_code := 3}}.
 reject() ->
     {reject, #{type => 0, icmp_code => 3}}.
 
@@ -408,25 +424,33 @@ Family: 2 = IPv4, 10 = IPv6.
 """.
 -spec snat(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> expr().
 snat(AddrReg, ProtoReg, Family) ->
-    {nat, #{type => snat, family => Family,
-            reg_addr_min => AddrReg, reg_proto_min => ProtoReg}}.
+    {nat, #{
+        type => snat,
+        family => Family,
+        reg_addr_min => AddrReg,
+        reg_proto_min => ProtoReg
+    }}.
 
--spec snat(non_neg_integer(), non_neg_integer()) -> expr().
+-spec snat(non_neg_integer(), non_neg_integer()) -> {nat, #{type := snat, family := non_neg_integer(), reg_addr_min := non_neg_integer(), reg_proto_min := non_neg_integer()}}.
 snat(AddrReg, ProtoReg) ->
     snat(AddrReg, ProtoReg, 2).
 
 -doc "Destination NAT. Rewrite destination address/port.".
 -spec dnat(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> expr().
 dnat(AddrReg, ProtoReg, Family) ->
-    {nat, #{type => dnat, family => Family,
-            reg_addr_min => AddrReg, reg_proto_min => ProtoReg}}.
+    {nat, #{
+        type => dnat,
+        family => Family,
+        reg_addr_min => AddrReg,
+        reg_proto_min => ProtoReg
+    }}.
 
--spec dnat(non_neg_integer(), non_neg_integer()) -> expr().
+-spec dnat(non_neg_integer(), non_neg_integer()) -> {nat, #{type := dnat, family := non_neg_integer(), reg_addr_min := non_neg_integer(), reg_proto_min := non_neg_integer()}}.
 dnat(AddrReg, ProtoReg) ->
     dnat(AddrReg, ProtoReg, 2).
 
 -doc "Masquerade (dynamic SNAT using outgoing interface address).".
--spec masq() -> expr().
+-spec masq() -> {masq, #{}}.
 masq() ->
     {masq, #{}}.
 
@@ -462,11 +486,17 @@ queue(Num, Opts) when is_map(Opts) ->
 
 -spec queue_flags([atom()]) -> non_neg_integer().
 queue_flags(Flags) when is_list(Flags) ->
-    lists:foldl(fun
-        (bypass, Acc) -> Acc bor 16#01;   %% NFT_QUEUE_FLAG_BYPASS
-        (fanout, Acc) -> Acc bor 16#02;   %% NFT_QUEUE_FLAG_CPU_FANOUT
-        (_, Acc) -> Acc
-    end, 0, Flags);
+    lists:foldl(
+        fun
+            %% NFT_QUEUE_FLAG_BYPASS
+            (bypass, Acc) -> Acc bor 16#01;
+            %% NFT_QUEUE_FLAG_CPU_FANOUT
+            (fanout, Acc) -> Acc bor 16#02;
+            (_, Acc) -> Acc
+        end,
+        0,
+        Flags
+    );
 queue_flags(N) when is_integer(N) -> N.
 
 -doc "Byte quota. Flags: 0 = until, 1 = over.".
@@ -477,8 +507,15 @@ quota(Bytes, Flags) ->
 -doc "Hash packet data for load balancing.".
 -spec hash(non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> expr().
 hash(SReg, Len, Modulus, DReg) ->
-    {hash, #{sreg => SReg, len => Len, modulus => Modulus, dreg => DReg,
-             type => 0, seed => 0, offset => 0}}.
+    {hash, #{
+        sreg => SReg,
+        len => Len,
+        modulus => Modulus,
+        dreg => DReg,
+        type => 0,
+        seed => 0,
+        offset => 0
+    }}.
 
 %% ===================================================================
 %% EXTENSION HEADERS / BYTE ORDER
@@ -490,7 +527,9 @@ exthdr(Type, Offset, Len, DReg) ->
     {exthdr, #{type => Type, offset => Offset, len => Len, dreg => DReg}}.
 
 -doc "Convert byte order: Op 0 = host-to-big, 1 = big-to-host.".
--spec byteorder(non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) -> expr().
+-spec byteorder(
+    non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()
+) -> expr().
 byteorder(Op, SReg, DReg, Len, Size) ->
     {byteorder, #{op => Op, sreg => SReg, dreg => DReg, len => Len, size => Size}}.
 
@@ -519,11 +558,13 @@ Returns a list of expressions suitable for use as a rule.
 
 Flags: SADDR(1) | IIF(8) = 9.  Result: OIF = 1.
 """.
--spec fib_rpf() -> [expr()].
+-spec fib_rpf() -> [{fib, #{result := non_neg_integer(), flags := non_neg_integer(), dreg := non_neg_integer()}} | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}} | {immediate, #{verdict := drop}}, ...].
 fib_rpf() ->
-    [fib(1, 9, 1),
-     cmp(eq, 1, <<0:32>>),
-     drop()].
+    [
+        fib(1, 9, 1),
+        cmp(eq, 1, <<0:32>>),
+        drop()
+    ].
 
 -doc "Match socket attributes. Key: 0=transparent, 1=mark, 2=wildcard, 3=cgroupv2.".
 -spec socket(non_neg_integer(), non_neg_integer()) -> expr().
@@ -552,10 +593,21 @@ dynset(SetName, SRegKey, Op) ->
 -doc "Per-key rate limiting via dynamic set (meter).".
 -spec meter(binary(), non_neg_integer(), non_neg_integer(), non_neg_integer(), atom()) -> expr().
 meter(SetName, SReg, Rate, Burst, Unit) ->
-    {dynset, #{set_name => SetName, sreg_key => SReg, op => 1,
-               set_id => 1,
-               exprs => [{limit, #{rate => Rate, burst => Burst,
-                                    unit => unit_val(Unit), type => 0, flags => 1}}]}}.
+    {dynset, #{
+        set_name => SetName,
+        sreg_key => SReg,
+        op => 1,
+        set_id => 1,
+        exprs => [
+            {limit, #{
+                rate => Rate,
+                burst => Burst,
+                unit => unit_val(Unit),
+                type => 0,
+                flags => 1
+            }}
+        ]
+    }}.
 
 -doc "Limit concurrent connections. Flags: 0=until, 1=over.".
 -spec connlimit(non_neg_integer(), non_neg_integer()) -> expr().
@@ -604,7 +656,7 @@ osf(DReg) ->
     {osf, #{dreg => DReg}}.
 
 -doc "Load OS fingerprint into a register and compare against a name string.".
--spec osf_match(non_neg_integer(), binary()) -> [expr()].
+-spec osf_match(non_neg_integer(), binary()) -> [{osf, #{dreg := non_neg_integer()}} | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}}, ...].
 osf_match(DReg, OsName) when is_binary(OsName) ->
     [osf(DReg), cmp(eq, DReg, OsName)].
 
@@ -622,13 +674,15 @@ Build a rule fragment for flow offload: offload established connections
 to the named flowtable. Returns a list of expressions suitable for
 appending to a rule (ct state established + flow add @FlowtableName).
 """.
--spec flow_offload(binary()) -> [expr()].
+-spec flow_offload(binary()) -> [{ct, #{key := atom(), dreg := non_neg_integer()}} | {bitwise, #{sreg := non_neg_integer(), dreg := non_neg_integer(), mask := binary(), xor_val := binary()}} | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}} | {offload, #{table_name := binary()}}, ...].
 flow_offload(FlowtableName) ->
     CT_ESTABLISHED = 16#02,
-    [ct(state, 1),
-     bitwise(1, 1, <<CT_ESTABLISHED:32/native>>, <<0:32>>),
-     cmp(neq, 1, <<0:32/native>>),
-     offload(FlowtableName)].
+    [
+        ct(state, 1),
+        bitwise(1, 1, <<CT_ESTABLISHED:32/native>>, <<0:32>>),
+        cmp(neq, 1, <<0:32/native>>),
+        offload(FlowtableName)
+    ].
 
 %% ===================================================================
 %% SECURITY MARKING
@@ -667,18 +721,28 @@ synproxy_filter_rule(Port, #{mss := Mss, wscale := Wscale} = Opts) ->
     Flags = synproxy_flags(Opts),
     Reg1 = 1,
     TCP = 6,
-    [ct(state, Reg1),
-     bitwise(Reg1, Reg1, <<StateMask:32/native>>, <<0:32>>),
-     cmp(neq, Reg1, <<0:32/native>>),
-     meta(l4proto, Reg1),
-     cmp(eq, Reg1, <<TCP>>),
-     tcp_dport(Reg1),
-     cmp(eq, Reg1, <<Port:16/big>>),
-     synproxy(Mss, Wscale, Flags)].
+    [
+        ct(state, Reg1),
+        bitwise(Reg1, Reg1, <<StateMask:32/native>>, <<0:32>>),
+        cmp(neq, Reg1, <<0:32/native>>),
+        meta(l4proto, Reg1),
+        cmp(eq, Reg1, <<TCP>>),
+        tcp_dport(Reg1),
+        cmp(eq, Reg1, <<Port:16/big>>),
+        synproxy(Mss, Wscale, Flags)
+    ].
 
 synproxy_flags(Opts) ->
-    F0 = case maps:get(timestamp, Opts, false) of true -> 1; false -> 0 end,
-    F1 = case maps:get(sack_perm, Opts, false) of true -> 2; false -> 0 end,
+    F0 =
+        case maps:get(timestamp, Opts, false) of
+            true -> 1;
+            false -> 0
+        end,
+    F1 =
+        case maps:get(sack_perm, Opts, false) of
+            true -> 2;
+            false -> 0
+        end,
     F0 bor F1.
 
 %% ===================================================================
@@ -704,7 +768,7 @@ xfrm(Key, Dir, DReg) ->
 %% ===================================================================
 
 -doc "Track timestamp of last rule match.".
--spec last() -> expr().
+-spec last() -> {last, #{set := 0, msecs := 0}}.
 last() ->
     {last, #{set => 0, msecs => 0}}.
 
@@ -713,7 +777,7 @@ last() ->
 %% ===================================================================
 
 -doc "Skip connection tracking for matched packets.".
--spec notrack() -> expr().
+-spec notrack() -> {notrack, #{}}.
 notrack() ->
     {notrack, #{}}.
 
@@ -740,6 +804,6 @@ generic(ExprName, Opts) when is_atom(ExprName), is_map(Opts) ->
 -spec unit_val(atom() | non_neg_integer()) -> non_neg_integer().
 unit_val(second) -> 1;
 unit_val(minute) -> 60;
-unit_val(hour)   -> 3600;
-unit_val(day)    -> 86400;
+unit_val(hour) -> 3600;
+unit_val(day) -> 86400;
 unit_val(N) when is_integer(N) -> N.

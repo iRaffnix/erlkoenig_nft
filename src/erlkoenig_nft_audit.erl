@@ -29,16 +29,20 @@ operations with timestamps. Maintains a ring buffer in memory
 
 -behaviour(gen_server).
 
--export([start_link/0,
-         log/2,
-         entries/0,
-         entries/1]).
+-export([
+    start_link/0,
+    log/2,
+    entries/0,
+    entries/1
+]).
 
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2
+]).
 
 -define(MAX_ENTRIES, 1000).
 
@@ -77,8 +81,9 @@ entries(N) ->
 
 %% --- gen_server callbacks ---
 
--spec init([]) -> {ok, state()}.
+-spec init([]) -> {ok, #{count := 0, entries := []}}.
 init([]) ->
+    proc_lib:set_label(erlkoenig_nft_audit),
     {ok, #{entries => [], count => 0}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -113,5 +118,9 @@ terminate(_Reason, _State) ->
 
 -spec format_time(calendar:datetime()) -> binary().
 format_time({{Y, M, D}, {H, Mi, S}}) ->
-    iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B",
-                                   [Y, M, D, H, Mi, S])).
+    iolist_to_binary(
+        io_lib:format(
+            "~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B",
+            [Y, M, D, H, Mi, S]
+        )
+    ).

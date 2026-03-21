@@ -35,7 +35,7 @@ encode(Opts) when is_map(Opts) ->
     nft_expr:build(<<"payload">>, Attrs).
 
 -doc "Return the Netlink expression name.".
--spec name() -> binary().
+-spec name() -> <<_:56>>.
 name() -> <<"payload">>.
 
 %% --- Attribute encoders ---

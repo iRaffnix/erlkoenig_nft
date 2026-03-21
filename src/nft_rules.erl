@@ -126,14 +126,14 @@ wrap each rule separately:
 -define(INET, 1).
 -define(REG1, 1).
 -define(REG2, 2).
--define(TCP,  6).
+-define(TCP, 6).
 -define(UDP, 17).
 -define(ICMP, 1).
 -define(ICMPV6, 58).
 
 %% Conntrack state bits
 -define(CT_ESTABLISHED, 16#02).
--define(CT_RELATED,     16#04).
+-define(CT_RELATED, 16#04).
 
 %% ICMP types
 -define(ICMP_ECHO_REQUEST, 8).
@@ -151,11 +151,17 @@ Should be the first rule in any chain with policy drop.
 -spec ct_established_accept() -> rule().
 ct_established_accept() ->
     Mask = ?CT_ESTABLISHED bor ?CT_RELATED,
-    [nft_expr_ir:ct(state, ?REG1),
-     nft_expr_ir:bitwise(?REG1, ?REG1,
-         <<Mask:32/native>>, <<0:32>>),
-     nft_expr_ir:cmp(neq, ?REG1, <<0:32/native>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:ct(state, ?REG1),
+        nft_expr_ir:bitwise(
+            ?REG1,
+            ?REG1,
+            <<Mask:32/native>>,
+            <<0:32>>
+        ),
+        nft_expr_ir:cmp(neq, ?REG1, <<0:32/native>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc """
 Accept established/related in forward chain.
@@ -170,75 +176,91 @@ forward_established() ->
 -doc "Accept all traffic on the loopback interface (ifindex 1).".
 -spec iif_accept() -> rule().
 iif_accept() ->
-    [nft_expr_ir:meta(iif, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<1:32/native>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(iif, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<1:32/native>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept all traffic on a named interface (e.g. <<\"br0\">>, <<\"wg0\">>).".
 -spec iifname_accept(binary()) -> rule().
 iifname_accept(Name) ->
     %% iifname is a 16-byte null-padded string
     Padded = pad_ifname(Name),
-    [nft_expr_ir:meta(iifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, Padded),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(iifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, Padded),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Jump to a named chain if traffic arrives on the given interface.".
 -spec iifname_jump(binary(), binary()) -> rule().
 iifname_jump(Name, Target) ->
     Padded = pad_ifname(Name),
-    [nft_expr_ir:meta(iifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, Padded),
-     nft_expr_ir:jump(Target)].
+    [
+        nft_expr_ir:meta(iifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, Padded),
+        nft_expr_ir:jump(Target)
+    ].
 
 -doc "Jump to a named chain if traffic arrives on InIf and leaves via OutIf.".
 -spec iifname_oifname_jump(binary(), binary(), binary()) -> rule().
 iifname_oifname_jump(InIf, OutIf, Target) ->
     PaddedIn = pad_ifname(InIf),
     PaddedOut = pad_ifname(OutIf),
-    [nft_expr_ir:meta(iifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, PaddedIn),
-     nft_expr_ir:meta(oifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, PaddedOut),
-     nft_expr_ir:jump(Target)].
+    [
+        nft_expr_ir:meta(iifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, PaddedIn),
+        nft_expr_ir:meta(oifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, PaddedOut),
+        nft_expr_ir:jump(Target)
+    ].
 
 -doc "Masquerade traffic arriving on InIf and leaving via OutIf.".
 -spec iifname_oifname_masq(binary(), binary()) -> rule().
 iifname_oifname_masq(InIf, OutIf) ->
     PaddedIn = pad_ifname(InIf),
     PaddedOut = pad_ifname(OutIf),
-    [nft_expr_ir:meta(iifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, PaddedIn),
-     nft_expr_ir:meta(oifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, PaddedOut),
-     nft_expr_ir:masq()].
+    [
+        nft_expr_ir:meta(iifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, PaddedIn),
+        nft_expr_ir:meta(oifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, PaddedOut),
+        nft_expr_ir:masq()
+    ].
 
 -doc "Accept traffic leaving via the given interface.".
 -spec oifname_accept(binary()) -> rule().
 oifname_accept(Name) ->
     Padded = pad_ifname(Name),
-    [nft_expr_ir:meta(oifname, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, Padded),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(oifname, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, Padded),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept TCP traffic on the given port.".
 -spec tcp_accept(0..65535) -> rule().
 tcp_accept(Port) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept TCP traffic with a named counter.".
 -spec tcp_accept_named(0..65535, binary()) -> rule().
 tcp_accept_named(Port, CounterName) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:objref_counter(CounterName),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:objref_counter(CounterName),
+        nft_expr_ir:accept()
+    ].
 
 -doc """
 Rate-limited TCP accept. Returns TWO rules:
@@ -247,51 +269,70 @@ Rate-limited TCP accept. Returns TWO rules:
 """.
 -spec tcp_accept_limited(0..65535, binary(), map()) -> [rule()].
 tcp_accept_limited(Port, CounterName, #{rate := Rate, burst := Burst}) ->
-    Match = [nft_expr_ir:meta(l4proto, ?REG1),
-             nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-             nft_expr_ir:tcp_dport(?REG1),
-             nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>)],
-    [Match ++ [nft_expr_ir:limit_over(Rate, Burst),
-               nft_expr_ir:drop()],
-     Match ++ [nft_expr_ir:objref_counter(CounterName),
-               nft_expr_ir:accept()]].
+    Match = [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>)
+    ],
+    [
+        Match ++
+            [
+                nft_expr_ir:limit_over(Rate, Burst),
+                nft_expr_ir:drop()
+            ],
+        Match ++
+            [
+                nft_expr_ir:objref_counter(CounterName),
+                nft_expr_ir:accept()
+            ]
+    ].
 
 -doc "Accept TCP traffic on a port range (inclusive).".
 -spec tcp_port_range_accept(0..65535, 0..65535) -> rule().
 tcp_port_range_accept(From, To) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:range(eq, ?REG1, <<From:16/big>>, <<To:16/big>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:range(eq, ?REG1, <<From:16/big>>, <<To:16/big>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Reject TCP traffic on a port with TCP RST.".
 -spec tcp_reject(0..65535) -> rule().
 tcp_reject(Port) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:reject(2, 0)].  %% type=2 (tcp reset), code ignored
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        %% type=2 (tcp reset), code ignored
+        nft_expr_ir:reject(2, 0)
+    ].
 
 -doc "Accept UDP traffic on the given port.".
 -spec udp_accept(0..65535) -> rule().
 udp_accept(Port) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept UDP traffic with a named counter.".
 -spec udp_accept_named(0..65535, binary()) -> rule().
 udp_accept_named(Port, CounterName) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:objref_counter(CounterName),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:objref_counter(CounterName),
+        nft_expr_ir:accept()
+    ].
 
 -doc """
 Rate-limited UDP accept. Returns TWO rules:
@@ -300,78 +341,104 @@ Rate-limited UDP accept. Returns TWO rules:
 """.
 -spec udp_accept_limited(0..65535, binary(), map()) -> [rule()].
 udp_accept_limited(Port, CounterName, #{rate := Rate, burst := Burst}) ->
-    Match = [nft_expr_ir:meta(l4proto, ?REG1),
-             nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-             nft_expr_ir:udp_dport(?REG1),
-             nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>)],
-    [Match ++ [nft_expr_ir:limit_over(Rate, Burst),
-               nft_expr_ir:drop()],
-     Match ++ [nft_expr_ir:objref_counter(CounterName),
-               nft_expr_ir:accept()]].
+    Match = [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>)
+    ],
+    [
+        Match ++
+            [
+                nft_expr_ir:limit_over(Rate, Burst),
+                nft_expr_ir:drop()
+            ],
+        Match ++
+            [
+                nft_expr_ir:objref_counter(CounterName),
+                nft_expr_ir:accept()
+            ]
+    ].
 
 -doc "Accept UDP traffic on a port range (inclusive).".
 -spec udp_port_range_accept(0..65535, 0..65535) -> rule().
 udp_port_range_accept(From, To) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:range(eq, ?REG1, <<From:16/big>>, <<To:16/big>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:range(eq, ?REG1, <<From:16/big>>, <<To:16/big>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept ICMP echo requests (ping).".
 -spec icmp_accept() -> rule().
 icmp_accept() ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?ICMP>>),
-     nft_expr_ir:payload(transport, 0, 1, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?ICMP_ECHO_REQUEST>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?ICMP>>),
+        nft_expr_ir:payload(transport, 0, 1, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?ICMP_ECHO_REQUEST>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept ICMPv6 echo requests (ping6). Required for IPv6 connectivity.".
 -spec icmpv6_accept() -> rule().
 icmpv6_accept() ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?ICMPV6>>),
-     nft_expr_ir:payload(transport, 0, 1, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?ICMPV6_ECHO_REQUEST>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?ICMPV6>>),
+        nft_expr_ir:payload(transport, 0, 1, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?ICMPV6_ECHO_REQUEST>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept all traffic of the given protocol.".
--spec protocol_accept(atom() | 0..255) -> rule().
+-spec protocol_accept(icmp | icmpv6 | tcp | udp | 0..255) -> [nft_expr_ir:expr(), ...].
 protocol_accept(Proto) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<(proto_num(Proto))>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<(proto_num(Proto))>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Accept traffic from a specific source address (4 or 16 byte binary).".
 -spec ip_saddr_accept(binary()) -> rule().
 ip_saddr_accept(IP) when byte_size(IP) =:= 4 ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
-     nft_expr_ir:ip_saddr(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, IP),
-     nft_expr_ir:accept()];
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
+        nft_expr_ir:ip_saddr(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, IP),
+        nft_expr_ir:accept()
+    ];
 ip_saddr_accept(IP) when byte_size(IP) =:= 16 ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
-     nft_expr_ir:ip6_saddr(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, IP),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
+        nft_expr_ir:ip6_saddr(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, IP),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Drop traffic from a specific source address (4 or 16 byte binary).".
 -spec ip_saddr_drop(binary()) -> rule().
 ip_saddr_drop(IP) when byte_size(IP) =:= 4 ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
-     nft_expr_ir:ip_saddr(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, IP),
-     nft_expr_ir:drop()];
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
+        nft_expr_ir:ip_saddr(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, IP),
+        nft_expr_ir:drop()
+    ];
 ip_saddr_drop(IP) when byte_size(IP) =:= 16 ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
-     nft_expr_ir:ip6_saddr(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, IP),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
+        nft_expr_ir:ip6_saddr(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, IP),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Drop if source IP is in the named set (IPv4).".
 -spec set_lookup_drop(binary()) -> rule().
@@ -381,17 +448,21 @@ set_lookup_drop(SetName) ->
 -doc "Drop if source IP is in the named set with explicit address type.".
 -spec set_lookup_drop(binary(), ipv4_addr | ipv6_addr) -> rule().
 set_lookup_drop(SetName, ipv4_addr) ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
-     nft_expr_ir:ip_saddr(?REG1),
-     nft_expr_ir:lookup(?REG1, SetName),
-     nft_expr_ir:drop()];
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
+        nft_expr_ir:ip_saddr(?REG1),
+        nft_expr_ir:lookup(?REG1, SetName),
+        nft_expr_ir:drop()
+    ];
 set_lookup_drop(SetName, ipv6_addr) ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
-     nft_expr_ir:ip6_saddr(?REG1),
-     nft_expr_ir:lookup(?REG1, SetName),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
+        nft_expr_ir:ip6_saddr(?REG1),
+        nft_expr_ir:lookup(?REG1, SetName),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Drop from set with a named counter (IPv4).".
 -spec set_lookup_drop_named(binary(), binary()) -> rule().
@@ -401,25 +472,31 @@ set_lookup_drop_named(SetName, CounterName) ->
 -doc "Drop from set with a named counter and explicit address type.".
 -spec set_lookup_drop_named(binary(), binary(), ipv4_addr | ipv6_addr) -> rule().
 set_lookup_drop_named(SetName, CounterName, ipv4_addr) ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
-     nft_expr_ir:ip_saddr(?REG1),
-     nft_expr_ir:lookup(?REG1, SetName),
-     nft_expr_ir:objref_counter(CounterName),
-     nft_expr_ir:drop()];
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
+        nft_expr_ir:ip_saddr(?REG1),
+        nft_expr_ir:lookup(?REG1, SetName),
+        nft_expr_ir:objref_counter(CounterName),
+        nft_expr_ir:drop()
+    ];
 set_lookup_drop_named(SetName, CounterName, ipv6_addr) ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
-     nft_expr_ir:ip6_saddr(?REG1),
-     nft_expr_ir:lookup(?REG1, SetName),
-     nft_expr_ir:objref_counter(CounterName),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
+        nft_expr_ir:ip6_saddr(?REG1),
+        nft_expr_ir:lookup(?REG1, SetName),
+        nft_expr_ir:objref_counter(CounterName),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Drop when concurrent connections exceed Count. Flags: 0=over, 1=invert.".
 -spec connlimit_drop(non_neg_integer(), non_neg_integer()) -> rule().
 connlimit_drop(Count, Flags) ->
-    [nft_expr_ir:connlimit(Count, Flags),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:connlimit(Count, Flags),
+        nft_expr_ir:drop()
+    ].
 
 -doc """
 Per-source-IP rate limit using dynamic set (meter).
@@ -439,42 +516,52 @@ meter_limit(SetName, Port, Proto, Opts) ->
     Burst = maps:get(burst, Opts, 5),
     Unit = maps:get(unit, Opts, second),
     ProtoNum = proto_num(Proto),
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
-     case Proto of
-         tcp -> nft_expr_ir:tcp_dport(?REG1);
-         udp -> nft_expr_ir:udp_dport(?REG1)
-     end,
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:ip_saddr(?REG1),
-     nft_expr_ir:meter(SetName, ?REG1, Rate, Burst, Unit),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+        case Proto of
+            tcp -> nft_expr_ir:tcp_dport(?REG1);
+            udp -> nft_expr_ir:udp_dport(?REG1)
+        end,
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:ip_saddr(?REG1),
+        nft_expr_ir:meter(SetName, ?REG1, Rate, Burst, Unit),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Log and drop all unmatched traffic.".
 -spec log_drop(binary()) -> rule().
 log_drop(Prefix) ->
-    [nft_expr_ir:log(#{prefix => Prefix}),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:log(#{prefix => Prefix}),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Log and drop with a named counter.".
 -spec log_drop_named(binary(), binary()) -> rule().
 log_drop_named(Prefix, CounterName) ->
-    [nft_expr_ir:objref_counter(CounterName),
-     nft_expr_ir:log(#{prefix => Prefix}),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:objref_counter(CounterName),
+        nft_expr_ir:log(#{prefix => Prefix}),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Log to NFLOG group, count, and drop.".
 -spec log_drop_nflog(binary(), non_neg_integer(), binary()) -> rule().
 log_drop_nflog(Prefix, Group, CounterName) ->
-    [nft_expr_ir:objref_counter(CounterName),
-     nft_expr_ir:log(#{prefix => Prefix, group => Group}),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:objref_counter(CounterName),
+        nft_expr_ir:log(#{prefix => Prefix, group => Group}),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Log and reject with ICMP unreachable (instead of silent drop).".
 -spec log_reject(binary()) -> rule().
 log_reject(Prefix) ->
-    [nft_expr_ir:log(#{prefix => Prefix}),
-     nft_expr_ir:reject()].
+    [
+        nft_expr_ir:log(#{prefix => Prefix}),
+        nft_expr_ir:reject()
+    ].
 
 -doc "Masquerade outgoing traffic (dynamic SNAT for NAT gateways).".
 -spec masq_rule() -> rule().
@@ -485,9 +572,11 @@ masq_rule() ->
 -spec oifname_neq_masq(binary()) -> rule().
 oifname_neq_masq(IfName) ->
     Padded = pad_ifname(IfName),
-    [nft_expr_ir:meta(oifname, ?REG1),
-     nft_expr_ir:cmp(neq, ?REG1, Padded),
-     nft_expr_ir:masq()].
+    [
+        nft_expr_ir:meta(oifname, ?REG1),
+        nft_expr_ir:cmp(neq, ?REG1, Padded),
+        nft_expr_ir:masq()
+    ].
 
 -doc """
 Destination NAT: forward traffic to an internal IP and port.
@@ -497,22 +586,27 @@ Loads the address and port into registers, then applies DNAT.
 -spec dnat_rule(binary(), 0..65535) -> rule().
 dnat_rule(IP, Port) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
     Family = ip_family(IP),
-    [nft_expr_ir:immediate_data(?REG1, IP),
-     nft_expr_ir:immediate_data(?REG2, <<Port:16/big>>),
-     nft_expr_ir:dnat(?REG1, ?REG2, Family)].
+    [
+        nft_expr_ir:immediate_data(?REG1, IP),
+        nft_expr_ir:immediate_data(?REG2, <<Port:16/big>>),
+        nft_expr_ir:dnat(?REG1, ?REG2, Family)
+    ].
 
 -doc "DNAT TCP traffic on MatchPort to DstIp:DstPort.".
 -spec tcp_dnat(0..65535, binary(), 0..65535) -> rule().
-tcp_dnat(MatchPort, DstIp, DstPort)
-  when byte_size(DstIp) =:= 4; byte_size(DstIp) =:= 16 ->
+tcp_dnat(MatchPort, DstIp, DstPort) when
+    byte_size(DstIp) =:= 4; byte_size(DstIp) =:= 16
+->
     Family = ip_family(DstIp),
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<MatchPort:16/big>>),
-     nft_expr_ir:immediate_data(?REG1, DstIp),
-     nft_expr_ir:immediate_data(?REG2, <<DstPort:16/big>>),
-     nft_expr_ir:dnat(?REG1, ?REG2, Family)].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<MatchPort:16/big>>),
+        nft_expr_ir:immediate_data(?REG1, DstIp),
+        nft_expr_ir:immediate_data(?REG2, <<DstPort:16/big>>),
+        nft_expr_ir:dnat(?REG1, ?REG2, Family)
+    ].
 
 -doc """
 Accept traffic on port+proto while under a byte quota.
@@ -524,13 +618,19 @@ The quota expression is an anonymous inline quota (not a named objref).
 quota_accept(Port, Proto, #{bytes := Bytes, mode := Mode}) ->
     Flags = quota_flags(Mode),
     ProtoNum = proto_num(Proto),
-    DportFun = case Proto of tcp -> fun nft_expr_ir:tcp_dport/1; udp -> fun nft_expr_ir:udp_dport/1 end,
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
-     DportFun(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:quota(Bytes, Flags),
-     nft_expr_ir:accept()].
+    DportFun =
+        case Proto of
+            tcp -> fun nft_expr_ir:tcp_dport/1;
+            udp -> fun nft_expr_ir:udp_dport/1
+        end,
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+        DportFun(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:quota(Bytes, Flags),
+        nft_expr_ir:accept()
+    ].
 
 -doc """
 Drop traffic on port+proto when over a byte quota.
@@ -541,13 +641,19 @@ Mode: over (flags=1) — quota matches when the limit is exceeded.
 quota_drop(Port, Proto, #{bytes := Bytes, mode := Mode}) ->
     Flags = quota_flags(Mode),
     ProtoNum = proto_num(Proto),
-    DportFun = case Proto of tcp -> fun nft_expr_ir:tcp_dport/1; udp -> fun nft_expr_ir:udp_dport/1 end,
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
-     DportFun(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:quota(Bytes, Flags),
-     nft_expr_ir:drop()].
+    DportFun =
+        case Proto of
+            tcp -> fun nft_expr_ir:tcp_dport/1;
+            udp -> fun nft_expr_ir:udp_dport/1
+        end,
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+        DportFun(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:quota(Bytes, Flags),
+        nft_expr_ir:drop()
+    ].
 
 -doc """
 Duplicate (TEE) matching packets to another address via a device.
@@ -567,21 +673,25 @@ Example:
 """.
 -spec dup_to(binary(), non_neg_integer(), 0..65535, tcp | udp) -> rule().
 dup_to(Addr, Device, Port, tcp) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:immediate_data(?REG1, Addr),
-     nft_expr_ir:immediate_data(?REG2, <<Device:32/native>>),
-     nft_expr_ir:dup(?REG1, ?REG2)];
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:immediate_data(?REG1, Addr),
+        nft_expr_ir:immediate_data(?REG2, <<Device:32/native>>),
+        nft_expr_ir:dup(?REG1, ?REG2)
+    ];
 dup_to(Addr, Device, Port, udp) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:immediate_data(?REG1, Addr),
-     nft_expr_ir:immediate_data(?REG2, <<Device:32/native>>),
-     nft_expr_ir:dup(?REG1, ?REG2)].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:immediate_data(?REG1, Addr),
+        nft_expr_ir:immediate_data(?REG2, <<Device:32/native>>),
+        nft_expr_ir:dup(?REG1, ?REG2)
+    ].
 
 -doc """
 Accept UDP traffic on a port if source IP is in the named set.
@@ -591,25 +701,29 @@ has been authorized via SPA and added to the allowlist set.
 """.
 -spec set_lookup_udp_accept(binary(), 0..65535, ipv4_addr | ipv6_addr) -> rule().
 set_lookup_udp_accept(SetName, Port, ipv4_addr) ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
-     nft_expr_ir:meta(l4proto, ?REG2),
-     nft_expr_ir:cmp(eq, ?REG2, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:ip_saddr(?REG1),
-     nft_expr_ir:lookup(?REG1, SetName),
-     nft_expr_ir:accept()];
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV4>>),
+        nft_expr_ir:meta(l4proto, ?REG2),
+        nft_expr_ir:cmp(eq, ?REG2, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:ip_saddr(?REG1),
+        nft_expr_ir:lookup(?REG1, SetName),
+        nft_expr_ir:accept()
+    ];
 set_lookup_udp_accept(SetName, Port, ipv6_addr) ->
-    [nft_expr_ir:meta(nfproto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
-     nft_expr_ir:meta(l4proto, ?REG2),
-     nft_expr_ir:cmp(eq, ?REG2, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:ip6_saddr(?REG1),
-     nft_expr_ir:lookup(?REG1, SetName),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:meta(nfproto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?NFPROTO_IPV6>>),
+        nft_expr_ir:meta(l4proto, ?REG2),
+        nft_expr_ir:cmp(eq, ?REG2, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:ip6_saddr(?REG1),
+        nft_expr_ir:lookup(?REG1, SetName),
+        nft_expr_ir:accept()
+    ].
 
 -doc """
 Capture a UDP packet on a port via NFLOG and drop it.
@@ -620,25 +734,29 @@ the target service.
 """.
 -spec nflog_capture_udp(0..65535, binary(), non_neg_integer()) -> rule().
 nflog_capture_udp(Port, Prefix, Group) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:log(#{prefix => Prefix, group => Group, snaplen => 128}),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:log(#{prefix => Prefix, group => Group, snaplen => 128}),
+        nft_expr_ir:drop()
+    ].
 
 -doc "Skip conntrack for port/proto. Use in raw prerouting chain (priority -300).".
 -spec notrack_rule(0..65535, atom() | 0..255) -> rule().
 notrack_rule(Port, Proto) ->
     ProtoNum = proto_num(Proto),
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
-     case Proto of
-         tcp -> nft_expr_ir:tcp_dport(?REG1);
-         udp -> nft_expr_ir:udp_dport(?REG1)
-     end,
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:notrack()].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+        case Proto of
+            tcp -> nft_expr_ir:tcp_dport(?REG1);
+            udp -> nft_expr_ir:udp_dport(?REG1)
+        end,
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:notrack()
+    ].
 
 %% --- SYN Proxy Rule Builders ---
 
@@ -663,7 +781,7 @@ Build a synproxy filter rule for a single TCP port.
 Matches ct state invalid|untracked + TCP dport, then applies synproxy.
 Use with a corresponding notrack_rule/2 in the raw chain.
 """.
--spec synproxy_filter_rule(0..65535, map()) -> rule().
+-spec synproxy_filter_rule(0..65535, #{mss := non_neg_integer(), wscale := non_neg_integer(), _ => _}) -> [nft_expr_ir:expr(), ...].
 synproxy_filter_rule(Port, Opts) ->
     nft_expr_ir:synproxy_filter_rule(Port, Opts).
 
@@ -675,14 +793,16 @@ queue_rule(Port, Proto, Opts) ->
     ProtoNum = proto_num(Proto),
     Num = maps:get(num, Opts),
     QueueFlags = maps:get(flags, Opts, []),
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
-     case Proto of
-         tcp -> nft_expr_ir:tcp_dport(?REG1);
-         udp -> nft_expr_ir:udp_dport(?REG1)
-     end,
-     nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-     nft_expr_ir:queue(Num, #{flags => QueueFlags})].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+        case Proto of
+            tcp -> nft_expr_ir:tcp_dport(?REG1);
+            udp -> nft_expr_ir:udp_dport(?REG1)
+        end,
+        nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
+        nft_expr_ir:queue(Num, #{flags => QueueFlags})
+    ].
 
 -doc "Queue matching packets in a port range to userspace NFQUEUE.".
 -spec queue_range_rule({0..65535, 0..65535}, tcp | udp, map()) -> rule().
@@ -690,30 +810,36 @@ queue_range_rule({FromPort, ToPort}, Proto, Opts) ->
     ProtoNum = proto_num(Proto),
     QueueNum = maps:get(num, Opts),
     QueueFlags = maps:get(flags, Opts, []),
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
-     case Proto of
-         tcp -> nft_expr_ir:tcp_dport(?REG1);
-         udp -> nft_expr_ir:udp_dport(?REG1)
-     end,
-     nft_expr_ir:range(eq, ?REG1, <<FromPort:16/big>>, <<ToPort:16/big>>),
-     nft_expr_ir:queue(QueueNum, #{flags => QueueFlags})].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<ProtoNum>>),
+        case Proto of
+            tcp -> nft_expr_ir:tcp_dport(?REG1);
+            udp -> nft_expr_ir:udp_dport(?REG1)
+        end,
+        nft_expr_ir:range(eq, ?REG1, <<FromPort:16/big>>, <<ToPort:16/big>>),
+        nft_expr_ir:queue(QueueNum, #{flags => QueueFlags})
+    ].
 
 %% --- Cgroup Matching (per-systemd-service rules) ---
 
 -doc "Accept packets from sockets in the given cgroupv2 ID.".
 -spec cgroup_accept(non_neg_integer()) -> rule().
 cgroup_accept(CgroupId) ->
-    [nft_expr_ir:socket_cgroup(2),
-     nft_expr_ir:cmp(eq, ?REG1, <<CgroupId:64/native>>),
-     nft_expr_ir:accept()].
+    [
+        nft_expr_ir:socket_cgroup(2),
+        nft_expr_ir:cmp(eq, ?REG1, <<CgroupId:64/native>>),
+        nft_expr_ir:accept()
+    ].
 
 -doc "Drop packets from sockets in the given cgroupv2 ID.".
 -spec cgroup_drop(non_neg_integer()) -> rule().
 cgroup_drop(CgroupId) ->
-    [nft_expr_ir:socket_cgroup(2),
-     nft_expr_ir:cmp(eq, ?REG1, <<CgroupId:64/native>>),
-     nft_expr_ir:drop()].
+    [
+        nft_expr_ir:socket_cgroup(2),
+        nft_expr_ir:cmp(eq, ?REG1, <<CgroupId:64/native>>),
+        nft_expr_ir:drop()
+    ].
 -doc """
 Dispatch TCP traffic to chains via a verdict map.
 
@@ -730,15 +856,19 @@ Example:
 """.
 -spec vmap_dispatch(tcp | udp, binary()) -> rule().
 vmap_dispatch(tcp, VmapName) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
-     nft_expr_ir:tcp_dport(?REG1),
-     nft_expr_ir:vmap_lookup(?REG1, VmapName)];
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
+        nft_expr_ir:tcp_dport(?REG1),
+        nft_expr_ir:vmap_lookup(?REG1, VmapName)
+    ];
 vmap_dispatch(udp, VmapName) ->
-    [nft_expr_ir:meta(l4proto, ?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
-     nft_expr_ir:udp_dport(?REG1),
-     nft_expr_ir:vmap_lookup(?REG1, VmapName)].
+    [
+        nft_expr_ir:meta(l4proto, ?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<?UDP>>),
+        nft_expr_ir:udp_dport(?REG1),
+        nft_expr_ir:vmap_lookup(?REG1, VmapName)
+    ].
 -doc """
 Offload established connections to a named flowtable.
 
@@ -761,8 +891,10 @@ Use this to tag connections in one chain and match them in another.
 """.
 -spec ct_mark_set(non_neg_integer()) -> rule().
 ct_mark_set(Value) ->
-    [nft_expr_ir:immediate_data(?REG1, <<Value:32/native>>),
-     nft_expr_ir:ct_mark_set(?REG1)].
+    [
+        nft_expr_ir:immediate_data(?REG1, <<Value:32/native>>),
+        nft_expr_ir:ct_mark_set(?REG1)
+    ].
 
 -doc """
 Match packets whose conntrack mark equals Value, then apply Verdict.
@@ -772,9 +904,11 @@ Verdict is typically accept() or drop().
 """.
 -spec ct_mark_match(non_neg_integer(), nft_expr_ir:expr()) -> rule().
 ct_mark_match(Value, Verdict) ->
-    [nft_expr_ir:ct_mark(?REG1),
-     nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
-     Verdict].
+    [
+        nft_expr_ir:ct_mark(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
+        Verdict
+    ].
 -doc """
 Drop packets that fail reverse-path filtering (BCP38 / anti-spoofing).
 
@@ -808,7 +942,7 @@ Example:
     %% ip saddr . tcp dport { 10.0.0.1 . 22 }
     concat_set_lookup(<<"allowpairs">>, [ip_saddr, tcp_dport], accept)
 """.
--spec concat_set_lookup(binary(), [atom()], atom()) -> rule().
+-spec concat_set_lookup(binary(), [ip_saddr | ip_daddr | ip6_saddr | ip6_daddr | tcp_sport | tcp_dport | udp_sport | udp_dport | ip_protocol], accept | drop) -> [nft_expr_ir:expr(), ...].
 concat_set_lookup(SetName, Fields, Verdict) ->
     KeyExprs = [field_to_expr(F) || F <- Fields],
     nft_expr_ir:concat_lookup(SetName, KeyExprs, Verdict).
@@ -819,20 +953,20 @@ Drop if the concatenated key matches an entry in the named set.
 Example:
     concat_set_lookup_drop(<<"denylist">>, [ip_saddr, tcp_dport])
 """.
--spec concat_set_lookup_drop(binary(), [atom()]) -> rule().
+-spec concat_set_lookup_drop(binary(), [ip_saddr | ip_daddr | ip6_saddr | ip6_daddr | tcp_sport | tcp_dport | udp_sport | udp_dport | ip_protocol]) -> [nft_expr_ir:expr(), ...].
 concat_set_lookup_drop(SetName, Fields) ->
     concat_set_lookup(SetName, Fields, drop).
 
 %% Map symbolic field names to {IR_expression, byte_length} tuples.
--spec field_to_expr(atom()) -> {nft_expr_ir:expr(), pos_integer()}.
-field_to_expr(ip_saddr)   -> {nft_expr_ir:ip_saddr(?REG1), 4};
-field_to_expr(ip_daddr)   -> {nft_expr_ir:ip_daddr(?REG1), 4};
-field_to_expr(ip6_saddr)  -> {nft_expr_ir:ip6_saddr(?REG1), 16};
-field_to_expr(ip6_daddr)  -> {nft_expr_ir:ip6_daddr(?REG1), 16};
-field_to_expr(tcp_sport)  -> {nft_expr_ir:tcp_sport(?REG1), 2};
-field_to_expr(tcp_dport)  -> {nft_expr_ir:tcp_dport(?REG1), 2};
-field_to_expr(udp_sport)  -> {nft_expr_ir:udp_sport(?REG1), 2};
-field_to_expr(udp_dport)  -> {nft_expr_ir:udp_dport(?REG1), 2};
+-spec field_to_expr(ip_saddr | ip_daddr | ip6_saddr | ip6_daddr | tcp_sport | tcp_dport | udp_sport | udp_dport | ip_protocol) -> {{payload, #{base := atom(), dreg := non_neg_integer(), len := pos_integer(), offset := non_neg_integer()}}, 1 | 2 | 4 | 16}.
+field_to_expr(ip_saddr) -> {nft_expr_ir:ip_saddr(?REG1), 4};
+field_to_expr(ip_daddr) -> {nft_expr_ir:ip_daddr(?REG1), 4};
+field_to_expr(ip6_saddr) -> {nft_expr_ir:ip6_saddr(?REG1), 16};
+field_to_expr(ip6_daddr) -> {nft_expr_ir:ip6_daddr(?REG1), 16};
+field_to_expr(tcp_sport) -> {nft_expr_ir:tcp_sport(?REG1), 2};
+field_to_expr(tcp_dport) -> {nft_expr_ir:tcp_dport(?REG1), 2};
+field_to_expr(udp_sport) -> {nft_expr_ir:udp_sport(?REG1), 2};
+field_to_expr(udp_dport) -> {nft_expr_ir:udp_dport(?REG1), 2};
 field_to_expr(ip_protocol) -> {nft_expr_ir:ip_protocol(?REG1), 1}.
 
 %% --- Set Element Operations (msg_funs, not terms) ---
@@ -857,10 +991,10 @@ unban_ip(Table, SetName, IP) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
 verdict_expr(accept) -> nft_expr_ir:accept();
 verdict_expr(drop) -> nft_expr_ir:drop().
 
--spec proto_num(atom() | 0..255) -> 0..255.
-proto_num(icmp)   -> 1;
-proto_num(tcp)    -> 6;
-proto_num(udp)    -> 17;
+-spec proto_num(icmp | icmpv6 | tcp | udp | 0..255) -> 0..255.
+proto_num(icmp) -> 1;
+proto_num(tcp) -> 6;
+proto_num(udp) -> 17;
 proto_num(icmpv6) -> 58;
 proto_num(N) when is_integer(N), N >= 0, N =< 255 -> N.
 
@@ -870,9 +1004,9 @@ pad_ifname(Name) when byte_size(Name) =< 16 ->
     <<Name/binary, 0:(Pad * 8)>>.
 
 %% NFPROTO_IPV4 = 2, NFPROTO_IPV6 = 10
-ip_family(IP) when byte_size(IP) =:= 4  -> 2;
+ip_family(IP) when byte_size(IP) =:= 4 -> 2;
 ip_family(IP) when byte_size(IP) =:= 16 -> 10.
 
 -spec quota_flags(until | over) -> 0 | 1.
 quota_flags(until) -> 0;
-quota_flags(over)  -> 1.
+quota_flags(over) -> 1.

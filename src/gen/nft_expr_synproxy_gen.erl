@@ -25,7 +25,7 @@ encode(Opts) when is_map(Opts) ->
     nft_expr:build(<<"synproxy">>, Attrs).
 
 -doc "Return the Netlink expression name.".
--spec name() -> binary().
+-spec name() -> <<_:64>>.
 name() -> <<"synproxy">>.
 
 %% --- Attribute encoders ---

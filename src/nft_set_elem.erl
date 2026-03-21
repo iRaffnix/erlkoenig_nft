@@ -35,10 +35,12 @@ NFTA_LIST_ELEM alongside the key.
 Corresponds to libnftnl src/set_elem.c.
 """.
 
--export([add/5, add/6,
-         add_elems/5,
-         add_vmap_elems/5,
-         del/5]).
+-export([
+    add/5, add/6,
+    add_elems/5,
+    add_vmap_elems/5,
+    del/5
+]).
 
 -include("nft_constants.hrl").
 
@@ -58,8 +60,10 @@ Example:
 -spec add(0..255, binary(), binary(), binary(), non_neg_integer()) ->
     nfnl_msg:nl_msg().
 add(Family, Table, Set, Key, Seq) ->
-    ElemAttrs = nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
-        nfnl_attr:encode(?NFTA_DATA_VALUE, Key)),
+    ElemAttrs = nfnl_attr:encode_nested(
+        ?NFTA_SET_ELEM_KEY,
+        nfnl_attr:encode(?NFTA_DATA_VALUE, Key)
+    ),
     build_elem_msg(?NFT_MSG_NEWSETELEM, Family, Table, Set, ElemAttrs, Seq).
 
 -doc """
@@ -71,12 +75,20 @@ Example:
     %% Ban IP for 1 hour (3600000 ms)
     nft_set_elem:add(1, <<"fw">>, <<"banned">>, <<10, 0, 0, 5>>, 3600000, Seq)
 """.
--spec add(0..255, binary(), binary(), binary(), non_neg_integer(),
-          non_neg_integer()) -> nfnl_msg:nl_msg().
+-spec add(
+    0..255,
+    binary(),
+    binary(),
+    binary(),
+    non_neg_integer(),
+    non_neg_integer()
+) -> nfnl_msg:nl_msg().
 add(Family, Table, Set, Key, Timeout, Seq) ->
     ElemAttrs = iolist_to_binary([
-        nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
-            nfnl_attr:encode(?NFTA_DATA_VALUE, Key)),
+        nfnl_attr:encode_nested(
+            ?NFTA_SET_ELEM_KEY,
+            nfnl_attr:encode(?NFTA_DATA_VALUE, Key)
+        ),
         nfnl_attr:encode_u64(?NFTA_SET_ELEM_TIMEOUT, Timeout)
     ]),
     build_elem_msg(?NFT_MSG_NEWSETELEM, Family, Table, Set, ElemAttrs, Seq).
@@ -90,8 +102,10 @@ Example:
 -spec del(0..255, binary(), binary(), binary(), non_neg_integer()) ->
     nfnl_msg:nl_msg().
 del(Family, Table, Set, Key, Seq) ->
-    ElemAttrs = nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
-        nfnl_attr:encode(?NFTA_DATA_VALUE, Key)),
+    ElemAttrs = nfnl_attr:encode_nested(
+        ?NFTA_SET_ELEM_KEY,
+        nfnl_attr:encode(?NFTA_DATA_VALUE, Key)
+    ),
     build_elem_msg(?NFT_MSG_DELSETELEM, Family, Table, Set, ElemAttrs, Seq).
 
 -doc """
@@ -107,10 +121,14 @@ Example:
     nfnl_msg:nl_msg().
 add_elems(Family, Table, Set, Keys, Seq) ->
     ElemList = iolist_to_binary([
-        nfnl_attr:encode_nested(?NFTA_LIST_ELEM,
-            nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
-                nfnl_attr:encode(?NFTA_DATA_VALUE, Key)))
-        || Key <- Keys
+        nfnl_attr:encode_nested(
+            ?NFTA_LIST_ELEM,
+            nfnl_attr:encode_nested(
+                ?NFTA_SET_ELEM_KEY,
+                nfnl_attr:encode(?NFTA_DATA_VALUE, Key)
+            )
+        )
+     || Key <- Keys
     ]),
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_TABLE, Table),
@@ -132,19 +150,29 @@ Example:
         {<<80:16/big>>, {jump, <<"http_chain">>}}
     ], Seq)
 """.
--spec add_vmap_elems(0..255, binary(), binary(),
-                     [{binary(), atom() | {atom(), binary()}}],
-                     non_neg_integer()) -> nfnl_msg:nl_msg().
+-spec add_vmap_elems(
+    0..255,
+    binary(),
+    binary(),
+    [{binary(), atom() | {atom(), binary()}}],
+    non_neg_integer()
+) -> nfnl_msg:nl_msg().
 add_vmap_elems(Family, Table, Set, Elements, Seq) ->
     ElemList = iolist_to_binary([
-        nfnl_attr:encode_nested(?NFTA_LIST_ELEM,
+        nfnl_attr:encode_nested(
+            ?NFTA_LIST_ELEM,
             iolist_to_binary([
-                nfnl_attr:encode_nested(?NFTA_SET_ELEM_KEY,
-                    nfnl_attr:encode(?NFTA_DATA_VALUE, Key)),
-                nfnl_attr:encode_nested(?NFTA_SET_ELEM_DATA,
-                    encode_verdict_data(Verdict))
-            ]))
-        || {Key, Verdict} <- Elements
+                nfnl_attr:encode_nested(
+                    ?NFTA_SET_ELEM_KEY,
+                    nfnl_attr:encode(?NFTA_DATA_VALUE, Key)
+                ),
+                nfnl_attr:encode_nested(
+                    ?NFTA_SET_ELEM_DATA,
+                    encode_verdict_data(Verdict)
+                )
+            ])
+        )
+     || {Key, Verdict} <- Elements
     ]),
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_TABLE, Table),
@@ -156,8 +184,14 @@ add_vmap_elems(Family, Table, Set, Elements, Seq) ->
 
 %% --- Internal ---
 
--spec build_elem_msg(0..255, 0..255, binary(), binary(), binary(),
-                     non_neg_integer()) -> nfnl_msg:nl_msg().
+-spec build_elem_msg(
+    12 | 14,
+    0..255,
+    binary(),
+    binary(),
+    binary(),
+    non_neg_integer()
+) -> nfnl_msg:nl_msg().
 build_elem_msg(MsgType, Family, Table, Set, ElemAttrs, Seq) ->
     ElemList = nfnl_attr:encode_nested(?NFTA_LIST_ELEM, ElemAttrs),
     Attrs = iolist_to_binary([
@@ -169,20 +203,28 @@ build_elem_msg(MsgType, Family, Table, Set, ElemAttrs, Seq) ->
     nfnl_msg:build_hdr(MsgType, Family, NlFlags, Seq, Attrs).
 
 encode_verdict_data(accept) ->
-    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
-        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NF_ACCEPT));
+    nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
+        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NF_ACCEPT)
+    );
 encode_verdict_data(drop) ->
-    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
-        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NF_DROP));
+    nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
+        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NF_DROP)
+    );
 encode_verdict_data({jump, Chain}) ->
-    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+    nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
         iolist_to_binary([
             nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NFT_JUMP),
             nfnl_attr:encode_str(?NFTA_VERDICT_CHAIN, Chain)
-        ]));
+        ])
+    );
 encode_verdict_data({goto, Chain}) ->
-    nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+    nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
         iolist_to_binary([
             nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, ?NFT_GOTO),
             nfnl_attr:encode_str(?NFTA_VERDICT_CHAIN, Chain)
-        ])).
+        ])
+    ).

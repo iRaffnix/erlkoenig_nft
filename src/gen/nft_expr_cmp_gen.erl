@@ -25,7 +25,7 @@ encode(Opts) when is_map(Opts) ->
     nft_expr:build(<<"cmp">>, Attrs).
 
 -doc "Return the Netlink expression name.".
--spec name() -> binary().
+-spec name() -> <<_:24>>.
 name() -> <<"cmp">>.
 
 %% --- Attribute encoders ---

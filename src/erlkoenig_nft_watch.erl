@@ -49,36 +49,40 @@ Threshold events:
 
 -behaviour(gen_server).
 
--export([start_link/1,
-         add_threshold/5,
-         remove_threshold/2,
-         get_rates/1,
-         get_rates/2,
-         stop/1]).
+-export([
+    start_link/1,
+    add_threshold/5,
+    remove_threshold/2,
+    get_rates/1,
+    get_rates/2,
+    stop/1
+]).
 
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2
+]).
 
 %% --- Types ---
 
 -type threshold_id() :: term().
 
 -type config() :: #{
-    family   := 0..255,
-    table    := binary(),
+    family := 0..255,
+    table := binary(),
     counters := [binary()],
     interval => pos_integer()
 }.
 
 -type state() :: #{
-    config     := config(),
-    socket     := socket:socket(),
-    rates      := #{binary() => map()},
+    config := config(),
+    socket := socket:socket(),
+    rates := #{binary() => map()},
     thresholds := [map()],
-    timer_ref  := reference() | undefined
+    timer_ref := reference() | undefined
 }.
 
 %% --- Constants ---
@@ -112,17 +116,25 @@ Example:
             logger:warning("SSH flood: ~s at ~.1f pps", [Name, Val])
         end, '>', 100.0})
 """.
--spec add_threshold(pid(), threshold_id(), binary(), atom(),
-                    {fun(), atom(), number()}) -> ok.
+-spec add_threshold(
+    pid(),
+    threshold_id(),
+    binary(),
+    atom(),
+    {fun(), atom(), number()}
+) -> ok.
 add_threshold(Pid, Id, Counter, Metric, {Action, Op, Value}) ->
-    gen_server:call(Pid, {add_threshold, #{
-        id => Id,
-        counter => Counter,
-        metric => Metric,
-        op => Op,
-        value => Value,
-        action => Action
-    }}).
+    gen_server:call(
+        Pid,
+        {add_threshold, #{
+            id => Id,
+            counter => Counter,
+            metric => Metric,
+            op => Op,
+            value => Value,
+            action => Action
+        }}
+    ).
 
 -doc "Remove a threshold by ID.".
 -spec remove_threshold(pid(), threshold_id()) -> ok.
@@ -148,7 +160,13 @@ stop(Pid) ->
 
 -spec init(config()) -> {ok, state()} | {stop, term()}.
 init(Config) ->
-    _ = (try pg:start_link(erlkoenig_nft) catch exit:{already_started, _} -> ok end),
+    proc_lib:set_label({erlkoenig_nft_watch, maps:get(table, Config)}),
+    _ =
+        (try
+            pg:start_link(erlkoenig_nft)
+        catch
+            exit:{already_started, _} -> ok
+        end),
 
     case nfnl_socket:open() of
         {ok, Sock} ->
@@ -184,31 +202,41 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
-handle_info(poll, #{config := Config, socket := Sock,
-                    thresholds := Ts} = State) ->
-    Family   = maps:get(family, Config),
-    Table    = maps:get(table, Config),
+handle_info(
+    poll,
+    #{
+        config := Config,
+        socket := Sock,
+        thresholds := Ts
+    } = State
+) ->
+    Family = maps:get(family, Config),
+    Table = maps:get(table, Config),
     Counters = maps:get(counters, Config),
     Interval = maps:get(interval, Config, ?DEFAULT_INTERVAL),
 
-    NewRates = lists:foldl(fun(Name, Acc) ->
-        case nft_object:get_counter_reset(Sock, Family, Table, Name) of
-            {ok, #{packets := Pkts, bytes := Bytes}} ->
-                IntervalSec = Interval / 1000.0,
-                Rate = #{
-                    name     => Name,
-                    packets  => Pkts,
-                    bytes    => Bytes,
-                    pps      => Pkts / IntervalSec,
-                    bps      => Bytes / IntervalSec,
-                    interval => Interval
-                },
-                broadcast({counter_event, Name, Rate}),
-                Acc#{Name => Rate};
-            {error, _} ->
-                Acc
-        end
-    end, #{}, Counters),
+    NewRates = lists:foldl(
+        fun(Name, Acc) ->
+            case nft_object:get_counter_reset(Sock, Family, Table, Name) of
+                {ok, #{packets := Pkts, bytes := Bytes}} ->
+                    IntervalSec = Interval / 1000.0,
+                    Rate = #{
+                        name => Name,
+                        packets => Pkts,
+                        bytes => Bytes,
+                        pps => Pkts / IntervalSec,
+                        bps => Bytes / IntervalSec,
+                        interval => Interval
+                    },
+                    broadcast({counter_event, Name, Rate}),
+                    Acc#{Name => Rate};
+                {error, _} ->
+                    Acc
+            end
+        end,
+        #{},
+        Counters
+    ),
 
     check_thresholds(Ts, NewRates),
 
@@ -219,15 +247,16 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, #{socket := Sock, timer_ref := Ref}) ->
-    _ = case Ref of
-        undefined -> ok;
-        _ -> _ = erlang:cancel_timer(Ref)
-    end,
+    _ =
+        case Ref of
+            undefined -> ok;
+            _ -> _ = erlang:cancel_timer(Ref)
+        end,
     nfnl_socket:close(Sock).
 
 %% --- Internal ---
 
--spec broadcast(term()) -> ok.
+-spec broadcast({counter_event, binary(), #{bps := float(), bytes := non_neg_integer(), interval := number(), name := binary(), packets := non_neg_integer(), pps := float()}} | {threshold_event, term(), term(), number(), number()}) -> ok.
 broadcast(Msg) ->
     try
         Members = pg:get_members(erlkoenig_nft, counter_events),
@@ -240,9 +269,19 @@ broadcast(Msg) ->
 -spec check_thresholds([map()], #{binary() => map()}) -> ok.
 check_thresholds([], _Rates) ->
     ok;
-check_thresholds([#{counter := Name, metric := Metric,
-                    op := Op, value := ThreshVal,
-                    action := Action} | Rest], Rates) ->
+check_thresholds(
+    [
+        #{
+            counter := Name,
+            metric := Metric,
+            op := Op,
+            value := ThreshVal,
+            action := Action
+        }
+        | Rest
+    ],
+    Rates
+) ->
     case maps:get(Name, Rates, undefined) of
         undefined ->
             ok;
@@ -250,10 +289,15 @@ check_thresholds([#{counter := Name, metric := Metric,
             CurrentVal = maps:get(Metric, Rate, 0),
             case eval_op(Op, CurrentVal, ThreshVal) of
                 true ->
-                    try Action(Name, Metric, CurrentVal, ThreshVal)
-                    catch C:R -> logger:warning("[erlkoenig_nft_watch] threshold action failed: ~p:~p", [C, R]) end,
-                    broadcast({threshold_event, Name, Metric,
-                               CurrentVal, ThreshVal});
+                    try
+                        Action(Name, Metric, CurrentVal, ThreshVal)
+                    catch
+                        C:R ->
+                            logger:warning("[erlkoenig_nft_watch] threshold action failed: ~p:~p", [
+                                C, R
+                            ])
+                    end,
+                    broadcast({threshold_event, Name, Metric, CurrentVal, ThreshVal});
                 false ->
                     ok
             end
@@ -261,8 +305,8 @@ check_thresholds([#{counter := Name, metric := Metric,
     check_thresholds(Rest, Rates).
 
 -spec eval_op(atom(), number(), number()) -> boolean().
-eval_op('>', A, B)  -> A > B;
-eval_op('<', A, B)  -> A < B;
+eval_op('>', A, B) -> A > B;
+eval_op('<', A, B) -> A < B;
 eval_op('>=', A, B) -> A >= B;
 eval_op('<=', A, B) -> A =< B;
 eval_op('==', A, B) -> A == B.

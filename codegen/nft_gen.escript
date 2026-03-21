@@ -128,7 +128,7 @@ gen_encode(ExprStr, Attrs) ->
         "        maps:fold(fun(K, V, Acc) -> [encode_attr(K, V) | Acc] end, [], Opts)),\n",
         io_lib:format("    nft_expr:build(<<\"~s\">>, Attrs).~n~n", [ExprStr]),
         io_lib:format("-doc \"Return the Netlink expression name.\".~n", []),
-        "-spec name() -> binary().\n",
+        "-spec name() -> nonempty_binary().\n",
         io_lib:format("name() -> <<\"~s\">>.~n~n", [ExprStr]),
         "%% --- Attribute encoders ---\n\n",
         Clauses,

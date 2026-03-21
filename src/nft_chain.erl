@@ -54,12 +54,12 @@ Corresponds to libnftnl src/chain.c.
 -type policy() :: accept | drop.
 
 -type chain_opts() :: #{
-    table    := binary(),
-    name     := binary(),
-    hook     := hook(),
-    type     => chain_type(),
+    table := binary(),
+    name := binary(),
+    hook := hook(),
+    type => chain_type(),
     priority => integer(),
-    policy   => policy()
+    policy => policy()
 }.
 %% Required keys: table, name, hook.
 %% Defaults: type=filter, priority=0, policy=accept.
@@ -85,21 +85,28 @@ Example:
     }, Seq).
 """.
 -spec add(0..255, chain_opts(), non_neg_integer()) -> nfnl_msg:nl_msg().
-add(Family, Opts, Seq)
-  when is_integer(Family), Family >= 0, Family =< 255,
-       is_map(Opts), is_integer(Seq), Seq >= 0 ->
+add(Family, Opts, Seq) when
+    is_integer(Family),
+    Family >= 0,
+    Family =< 255,
+    is_map(Opts),
+    is_integer(Seq),
+    Seq >= 0
+->
     Table = maps:get(table, Opts),
-    Name  = maps:get(name, Opts),
-    Hook  = hook_num(maps:get(hook, Opts)),
-    Prio  = maps:get(priority, Opts, 0),
-    Type  = atom_to_binary(maps:get(type, Opts, filter)),
-    Pol   = policy_val(maps:get(policy, Opts, accept)),
+    Name = maps:get(name, Opts),
+    Hook = hook_num(maps:get(hook, Opts)),
+    Prio = maps:get(priority, Opts, 0),
+    Type = atom_to_binary(maps:get(type, Opts, filter)),
+    Pol = policy_val(maps:get(policy, Opts, accept)),
 
-    HookNest = nfnl_attr:encode_nested(?NFTA_CHAIN_HOOK,
+    HookNest = nfnl_attr:encode_nested(
+        ?NFTA_CHAIN_HOOK,
         iolist_to_binary([
             nfnl_attr:encode_u32(?NFTA_HOOK_HOOKNUM, Hook),
             nfnl_attr:encode(?NFTA_HOOK_PRIORITY, <<Prio:32/big-signed>>)
-        ])),
+        ])
+    ),
 
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_CHAIN_TABLE, Table),
@@ -124,13 +131,22 @@ Example:
         name  => <<"ct_abc123">>
     }, Seq).
 """.
--spec add_regular(0..255, #{table := binary(), name := binary()},
-                  non_neg_integer()) -> nfnl_msg:nl_msg().
-add_regular(Family, #{table := Table, name := Name}, Seq)
-  when is_integer(Family), Family >= 0, Family =< 255,
-       is_binary(Table), byte_size(Table) > 0,
-       is_binary(Name), byte_size(Name) > 0,
-       is_integer(Seq), Seq >= 0 ->
+-spec add_regular(
+    0..255,
+    #{table := binary(), name := binary()},
+    non_neg_integer()
+) -> nfnl_msg:nl_msg().
+add_regular(Family, #{table := Table, name := Name}, Seq) when
+    is_integer(Family),
+    Family >= 0,
+    Family =< 255,
+    is_binary(Table),
+    byte_size(Table) > 0,
+    is_binary(Name),
+    byte_size(Name) > 0,
+    is_integer(Seq),
+    Seq >= 0
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_CHAIN_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_CHAIN_NAME, Name)
@@ -141,12 +157,12 @@ add_regular(Family, #{table := Table, name := Name}, Seq)
 %% --- Internal ---
 
 -spec hook_num(hook()) -> 0..4.
-hook_num(prerouting)  -> ?NF_INET_PRE_ROUTING;
-hook_num(input)       -> ?NF_INET_LOCAL_IN;
-hook_num(forward)     -> ?NF_INET_FORWARD;
-hook_num(output)      -> ?NF_INET_LOCAL_OUT;
+hook_num(prerouting) -> ?NF_INET_PRE_ROUTING;
+hook_num(input) -> ?NF_INET_LOCAL_IN;
+hook_num(forward) -> ?NF_INET_FORWARD;
+hook_num(output) -> ?NF_INET_LOCAL_OUT;
 hook_num(postrouting) -> ?NF_INET_POST_ROUTING.
 
 -spec policy_val(policy()) -> 0..1.
 policy_val(accept) -> ?NF_ACCEPT;
-policy_val(drop)   -> ?NF_DROP.
+policy_val(drop) -> ?NF_DROP.

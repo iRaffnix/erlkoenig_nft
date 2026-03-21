@@ -43,10 +43,10 @@ Corresponds to libnftnl src/expr/log.c.
 %% --- Types ---
 
 -type log_opts() :: #{
-    prefix  => binary(),
-    group   => non_neg_integer(),
+    prefix => binary(),
+    group => non_neg_integer(),
     snaplen => non_neg_integer(),
-    level   => 0..7
+    level => 0..7
 }.
 
 -include("nft_constants.hrl").
@@ -70,22 +70,24 @@ Example:
 """.
 -spec new(log_opts()) -> binary().
 new(Opts) when is_map(Opts) ->
-    Attrs = iolist_to_binary(lists:flatten([
-        case maps:get(group, Opts, undefined) of
-            undefined -> [];
-            Group -> [nfnl_attr:encode(?NFTA_LOG_GROUP, <<Group:16/big>>)]
-        end,
-        case maps:get(prefix, Opts, undefined) of
-            undefined -> [];
-            Prefix -> [nfnl_attr:encode_str(?NFTA_LOG_PREFIX, Prefix)]
-        end,
-        case maps:get(snaplen, Opts, undefined) of
-            undefined -> [];
-            Snap -> [nfnl_attr:encode_u32(?NFTA_LOG_SNAPLEN, Snap)]
-        end,
-        case maps:get(level, Opts, undefined) of
-            undefined -> [];
-            Level -> [nfnl_attr:encode_u32(?NFTA_LOG_LEVEL, Level)]
-        end
-    ])),
+    Attrs = iolist_to_binary(
+        lists:flatten([
+            case maps:get(group, Opts, undefined) of
+                undefined -> [];
+                Group -> [nfnl_attr:encode(?NFTA_LOG_GROUP, <<Group:16/big>>)]
+            end,
+            case maps:get(prefix, Opts, undefined) of
+                undefined -> [];
+                Prefix -> [nfnl_attr:encode_str(?NFTA_LOG_PREFIX, Prefix)]
+            end,
+            case maps:get(snaplen, Opts, undefined) of
+                undefined -> [];
+                Snap -> [nfnl_attr:encode_u32(?NFTA_LOG_SNAPLEN, Snap)]
+            end,
+            case maps:get(level, Opts, undefined) of
+                undefined -> [];
+                Level -> [nfnl_attr:encode_u32(?NFTA_LOG_LEVEL, Level)]
+            end
+        ])
+    ),
     nft_expr:build(<<"log">>, Attrs).

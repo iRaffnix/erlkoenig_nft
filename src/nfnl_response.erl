@@ -53,7 +53,7 @@ Common error codes:
 %% --- Constants ---
 
 -define(NLMSG_ERROR, 2).
--define(NLMSG_DONE,  3).
+-define(NLMSG_DONE, 3).
 
 %% --- Public API ---
 
@@ -72,33 +72,39 @@ parse(Bin) when is_binary(Bin) ->
 -spec parse_messages(binary(), response()) -> response().
 parse_messages(<<>>, Acc) ->
     lists:reverse(Acc);
-parse_messages(<<Len:32/little, ?NLMSG_ERROR:16/little, _Flags:16/little,
-                 _Seq:32/little, _Pid:32/little, Error:32/signed-little,
-                 _Rest/binary>> = Bin, Acc) when Len >= 20 ->
-    Result = case Error of
-        0 -> ok;
-        N -> {error, {N, errno_name(N)}}
-    end,
+parse_messages(
+    <<Len:32/little, ?NLMSG_ERROR:16/little, _Flags:16/little, _Seq:32/little, _Pid:32/little,
+        Error:32/signed-little, _Rest/binary>> = Bin,
+    Acc
+) when Len >= 20 ->
+    Result =
+        case Error of
+            0 -> ok;
+            N -> {error, {N, errno_name(N)}}
+        end,
     <<_:Len/binary, Tail/binary>> = Bin,
     parse_messages(Tail, [Result | Acc]);
-parse_messages(<<Len:32/little, ?NLMSG_DONE:16/little, _/binary>> = Bin, Acc)
-  when Len >= 16 ->
+parse_messages(<<Len:32/little, ?NLMSG_DONE:16/little, _/binary>> = Bin, Acc) when
+    Len >= 16
+->
     <<_:Len/binary, Tail/binary>> = Bin,
     parse_messages(Tail, Acc);
-parse_messages(<<Len:32/little, _Type:16/little, _/binary>> = Bin, Acc)
-  when Len >= 16 ->
+parse_messages(<<Len:32/little, _Type:16/little, _/binary>> = Bin, Acc) when
+    Len >= 16
+->
     <<_:Len/binary, Tail/binary>> = Bin,
     parse_messages(Tail, Acc);
 parse_messages(_Other, Acc) ->
     lists:reverse(Acc).
 
--spec errno_name(integer()) -> atom().
-errno_name(-1)  -> eperm;
-errno_name(-2)  -> enoent;
+-spec errno_name(integer()) ->
+    eacces | eexist | einval | enoent | enomem | enospc | eopnotsupp | eperm | unknown.
+errno_name(-1) -> eperm;
+errno_name(-2) -> enoent;
 errno_name(-12) -> enomem;
 errno_name(-13) -> eacces;
 errno_name(-17) -> eexist;
 errno_name(-22) -> einval;
 errno_name(-28) -> enospc;
 errno_name(-95) -> eopnotsupp;
-errno_name(_)   -> unknown.
+errno_name(_) -> unknown.

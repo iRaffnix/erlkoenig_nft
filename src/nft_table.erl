@@ -65,15 +65,22 @@ Example:
     Msg = nft_table:add(1, <<"fw">>, #{owner => true}, Seq).
 """.
 -spec add(0..255, binary(), map(), non_neg_integer()) -> nfnl_msg:nl_msg().
-add(Family, Name, Opts, Seq)
-  when is_integer(Family), Family >= 0, Family =< 255,
-       is_binary(Name), byte_size(Name) > 0,
-       is_map(Opts),
-       is_integer(Seq), Seq >= 0 ->
-    TableFlags = case maps:get(owner, Opts, false) of
-        true  -> 16#02;  % NFT_TABLE_F_OWNER
-        false -> 0
-    end,
+add(Family, Name, Opts, Seq) when
+    is_integer(Family),
+    Family >= 0,
+    Family =< 255,
+    is_binary(Name),
+    byte_size(Name) > 0,
+    is_map(Opts),
+    is_integer(Seq),
+    Seq >= 0
+->
+    TableFlags =
+        case maps:get(owner, Opts, false) of
+            % NFT_TABLE_F_OWNER
+            true -> 16#02;
+            false -> 0
+        end,
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_TABLE_NAME, Name),
         nfnl_attr:encode_u32(?NFTA_TABLE_FLAGS, TableFlags)

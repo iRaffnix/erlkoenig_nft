@@ -26,11 +26,13 @@ in a gen_server yet — that comes later when we add event monitoring
 via multicast groups.
 """.
 
--export([open/0,
-         send/2,
-         recv/1,
-         recv/2,
-         close/1]).
+-export([
+    open/0,
+    send/2,
+    recv/1,
+    recv/2,
+    close/1
+]).
 
 %% --- Constants ---
 
@@ -48,17 +50,19 @@ The socket is bound with pid=0, letting the kernel assign our port ID.
 """.
 -spec open() -> {ok, socket:socket()} | {error, atom()}.
 open() ->
-    case socket:open(?AF_NETLINK, raw, ?NETLINK_NETFILTER) of
-        {ok, Sock} ->
+    maybe
+        {ok, Sock} ?= socket:open(?AF_NETLINK, raw, ?NETLINK_NETFILTER),
+        ok ?=
             case socket:bind(Sock, sockaddr(0, 0)) of
                 ok ->
-                    {ok, Sock};
-                {error, _} = Err ->
+                    ok;
+                {error, _} = BindErr ->
                     _ = socket:close(Sock),
-                    Err
-            end;
-        {error, _} = Err ->
-            Err
+                    BindErr
+            end,
+        {ok, Sock}
+    else
+        {error, _} = Err -> Err
     end.
 
 -doc "Send a binary message to the kernel (pid 0).".
@@ -66,7 +70,7 @@ open() ->
 send(Sock, Data) when is_binary(Data) ->
     case socket:sendto(Sock, Data, sockaddr(0, 0)) of
         {ok, _} -> ok;
-        ok      -> ok;
+        ok -> ok;
         {error, _} = Err -> Err
     end.
 
@@ -88,8 +92,9 @@ close(Sock) ->
 
 %% --- Internal ---
 
--spec sockaddr(non_neg_integer(), non_neg_integer()) -> map().
+-spec sockaddr(0, 0) -> #{addr := <<_:96>>, family := 16}.
 sockaddr(Pid, Groups) ->
-    #{family => ?AF_NETLINK,
-      addr   => <<?AF_NETLINK:16/native, 0:16,
-                   Pid:32/native, Groups:32/native>>}.
+    #{
+        family => ?AF_NETLINK,
+        addr => <<?AF_NETLINK:16/native, 0:16, Pid:32/native, Groups:32/native>>
+    }.

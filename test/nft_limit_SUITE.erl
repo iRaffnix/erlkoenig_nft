@@ -9,14 +9,27 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [limit_pps, limit_bps, limit_over_pps, limit_over_bps,
-                         limit_custom_unit, limit_expr_name, limit_attrs_correct,
-                         limit_inv_flag, delete_rule_msg, delete_rule_has_handle]},
-     {kernel, [], [kernel_limit_in_rule, kernel_delete_rule]}].
+    [
+        {unit, [parallel], [
+            limit_pps,
+            limit_bps,
+            limit_over_pps,
+            limit_over_bps,
+            limit_custom_unit,
+            limit_expr_name,
+            limit_attrs_correct,
+            limit_inv_flag,
+            delete_rule_msg,
+            delete_rule_has_handle
+        ]},
+        {kernel, [], [kernel_limit_in_rule, kernel_delete_rule]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -124,21 +137,38 @@ kernel_limit_in_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            [nft_expr_ir:meta(l4proto, 1),
-             nft_expr_ir:cmp(eq, 1, <<6>>),
-             nft_expr_ir:tcp_dport(1),
-             nft_expr_ir:cmp(eq, 1, <<0, 80>>),
-             nft_expr_ir:limit(25, 5),
-             nft_expr_ir:accept()])
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            [
+                nft_expr_ir:meta(l4proto, 1),
+                nft_expr_ir:cmp(eq, 1, <<6>>),
+                nft_expr_ir:tcp_dport(1),
+                nft_expr_ir:cmp(eq, 1, <<0, 80>>),
+                nft_expr_ir:limit(25, 5),
+                nft_expr_ir:accept()
+            ]
+        )
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
+    Output = os:cmd(
+        "nft list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     ?assertNotEqual(nomatch, string:find(Output, "limit rate")),
     nfnl_server:stop(Pid).
 
@@ -146,20 +176,33 @@ kernel_delete_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, nft_rules:tcp_accept(80))
     ]),
     %% Verify rule exists
-    Output1 = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                      ++ " " ++ binary_to_list(?CHAIN)),
+    Output1 = os:cmd(
+        "nft list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     ?assertNotEqual(nomatch, string:find(Output1, "tcp dport 80")),
     %% Get the rule handle
-    HandleOutput = os:cmd("nft -a list chain inet " ++ binary_to_list(?TABLE)
-                           ++ " " ++ binary_to_list(?CHAIN)),
+    HandleOutput = os:cmd(
+        "nft -a list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     Handle = extract_rule_handle(HandleOutput),
     ?assert(Handle > 0),
     %% Delete by handle
@@ -167,8 +210,10 @@ kernel_delete_rule(_Config) ->
         fun(Seq) -> nft_delete:rule(?NFPROTO_INET, ?TABLE, ?CHAIN, Handle, Seq) end
     ]),
     %% Verify rule is gone
-    Output2 = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                      ++ " " ++ binary_to_list(?CHAIN)),
+    Output2 = os:cmd(
+        "nft list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     ?assertEqual(nomatch, string:find(Output2, "tcp dport 80")),
     nfnl_server:stop(Pid).
 
@@ -184,14 +229,18 @@ decode_expr(Bin) ->
 
 extract_rule_handle(Output) ->
     Lines = string:split(Output, "\n", all),
-    RuleLines = [L || L <- Lines,
-                      string:find(L, "handle") =/= nomatch,
-                      string:find(L, "chain") =:= nomatch],
+    RuleLines = [
+        L
+     || L <- Lines,
+        string:find(L, "handle") =/= nomatch,
+        string:find(L, "chain") =:= nomatch
+    ],
     case RuleLines of
         [RuleLine | _] ->
             case re:run(RuleLine, "handle ([0-9]+)", [{capture, [1], list}]) of
                 {match, [NumStr]} -> list_to_integer(NumStr);
                 _ -> 0
             end;
-        [] -> 0
+        [] ->
+            0
     end.

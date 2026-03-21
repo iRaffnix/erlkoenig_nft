@@ -46,28 +46,30 @@ Example:
         #{iif => 1, iifname => <<"lo">>})
 """.
 
--export([tcp/2, tcp/3,
-         udp/2, udp/3,
-         icmp/2, icmp/3,
-         raw/1,
-         with_sets/2,
-         with_vmaps/2,
-         with_limit_state/2]).
+-export([
+    tcp/2, tcp/3,
+    udp/2, udp/3,
+    icmp/2, icmp/3,
+    raw/1,
+    with_sets/2,
+    with_vmaps/2,
+    with_limit_state/2
+]).
 
 %% --- Constants ---
 
 %% Conntrack state bits (matching kernel nf_conntrack_common.h)
--define(CT_NEW,               16#08).
--define(CT_ESTABLISHED,       16#02).
--define(CT_RELATED,           16#04).
+-define(CT_NEW, 16#08).
+-define(CT_ESTABLISHED, 16#02).
+-define(CT_RELATED, 16#04).
 -define(CT_ESTABLISHED_REPLY, 16#20).
--define(CT_INVALID,           16#01).
--define(CT_UNTRACKED,         16#40).
+-define(CT_INVALID, 16#01).
+-define(CT_UNTRACKED, 16#40).
 
 %% IP protocol numbers
--define(IPPROTO_ICMP,  1).
--define(IPPROTO_TCP,   6).
--define(IPPROTO_UDP,  17).
+-define(IPPROTO_ICMP, 1).
+-define(IPPROTO_TCP, 6).
+-define(IPPROTO_UDP, 17).
 
 %% --- Public API ---
 
@@ -91,12 +93,11 @@ tcp(IpOpts, TcpOpts, Meta) ->
     AckNum = maps:get(ack_num, TcpOpts, 0),
     Window = maps:get(window, TcpOpts, 65535),
     DataOffset = 5,
-    TcpHeader = <<Sport:16/big, Dport:16/big,
-                  Seq:32/big,
-                  AckNum:32/big,
-                  DataOffset:4, 0:6, Flags:6,
-                  Window:16/big,
-                  0:16, 0:16>>,  %% checksum, urgent ptr
+    TcpHeader =
+        <<Sport:16/big, Dport:16/big, Seq:32/big, AckNum:32/big, DataOffset:4, 0:6, Flags:6,
+            Window:16/big,
+            %% checksum, urgent ptr
+            0:16, 0:16>>,
 
     IpHeader = build_ip_header(IpOpts, ?IPPROTO_TCP, byte_size(TcpHeader)),
 
@@ -115,9 +116,10 @@ udp(IpOpts, UdpOpts, Meta) ->
     Dport = maps:get(dport, UdpOpts, 0),
     Payload = maps:get(payload, UdpOpts, <<>>),
     Len = 8 + byte_size(Payload),
-    UdpHeader = <<Sport:16/big, Dport:16/big,
-                  Len:16/big, 0:16,  %% length, checksum
-                  Payload/binary>>,
+    UdpHeader =
+        <<Sport:16/big, Dport:16/big,
+            %% length, checksum
+            Len:16/big, 0:16, Payload/binary>>,
 
     IpHeader = build_ip_header(IpOpts, ?IPPROTO_UDP, byte_size(UdpHeader)),
 
@@ -134,10 +136,10 @@ icmp(IpOpts, IcmpOpts) ->
 icmp(IpOpts, IcmpOpts, Meta) ->
     Type = icmp_type(maps:get(type, IcmpOpts, echo_request)),
     Code = maps:get(code, IcmpOpts, 0),
-    Id   = maps:get(id, IcmpOpts, 1),
+    Id = maps:get(id, IcmpOpts, 1),
     SeqN = maps:get(seq, IcmpOpts, 1),
-    IcmpHeader = <<Type:8, Code:8, 0:16,  %% type, code, checksum
-                   Id:16/big, SeqN:16/big>>,
+    %% type, code, checksum
+    IcmpHeader = <<Type:8, Code:8, 0:16, Id:16/big, SeqN:16/big>>,
 
     IpHeader = build_ip_header(IpOpts, ?IPPROTO_ICMP, byte_size(IcmpHeader)),
 
@@ -152,12 +154,20 @@ Must contain at minimum: network, transport, l4proto, nfproto.
 -spec raw(map()) -> nft_vm:packet().
 raw(Map) ->
     Defaults = #{
-        network => <<>>, transport => <<>>, link => <<>>,
-        nfproto => 2, l4proto => 0,
-        iif => 0, oif => 0,
-        iifname => <<>>, oifname => <<>>,
-        len => 0, mark => 0,
-        ct_state => 0, ct_mark => 0, ct_status => 0,
+        network => <<>>,
+        transport => <<>>,
+        link => <<>>,
+        nfproto => 2,
+        l4proto => 0,
+        iif => 0,
+        oif => 0,
+        iifname => <<>>,
+        oifname => <<>>,
+        len => 0,
+        mark => 0,
+        ct_state => 0,
+        ct_mark => 0,
+        ct_status => 0,
         sets => #{}
     },
     maps:merge(Defaults, Map).
@@ -175,9 +185,13 @@ Example:
 """.
 -spec with_sets(nft_vm:packet(), #{binary() => [binary()]}) -> nft_vm:packet().
 with_sets(Pkt, SetMap) ->
-    Sets = maps:fold(fun(Name, Elements, Acc) ->
-        Acc#{Name => sets:from_list(Elements)}
-    end, maps:get(sets, Pkt, #{}), SetMap),
+    Sets = maps:fold(
+        fun(Name, Elements, Acc) ->
+            Acc#{Name => sets:from_list(Elements)}
+        end,
+        maps:get(sets, Pkt, #{}),
+        SetMap
+    ),
     Pkt#{sets => Sets}.
 
 -doc """
@@ -215,57 +229,71 @@ with_limit_state(Pkt, LimitState) ->
 %% --- Internal ---
 
 build_ip_header(IpOpts, Protocol, PayloadLen) ->
-    Saddr = ip_to_bin(maps:get(saddr, IpOpts, {0,0,0,0})),
+    Saddr = ip_to_bin(maps:get(saddr, IpOpts, {0, 0, 0, 0})),
     case byte_size(Saddr) of
         4 ->
-            Daddr = ip_to_bin(maps:get(daddr, IpOpts, {0,0,0,0})),
+            Daddr = ip_to_bin(maps:get(daddr, IpOpts, {0, 0, 0, 0})),
             build_ipv4_header(Saddr, Daddr, IpOpts, Protocol, PayloadLen);
         16 ->
-            Daddr = ip_to_bin(maps:get(daddr, IpOpts, {0,0,0,0,0,0,0,0})),
+            Daddr = ip_to_bin(maps:get(daddr, IpOpts, {0, 0, 0, 0, 0, 0, 0, 0})),
             build_ipv6_header(Saddr, Daddr, IpOpts, Protocol, PayloadLen)
     end.
 
 build_ipv4_header(Saddr, Daddr, IpOpts, Protocol, PayloadLen) ->
     Ttl = maps:get(ttl, IpOpts, 64),
     TotalLen = 20 + PayloadLen,
-    <<4:4, 5:4, 0:8,                    %% version, IHL, DSCP/ECN
-      TotalLen:16/big,                    %% total length
-      0:16, 0:16,                         %% identification, flags/fragment
-      Ttl:8, Protocol:8, 0:16,           %% TTL, protocol, checksum
-      Saddr:4/binary,                     %% source address
-      Daddr:4/binary>>.                   %% destination address
+    %% version, IHL, DSCP/ECN
+    <<4:4, 5:4, 0:8,
+        %% total length
+        TotalLen:16/big,
+        %% identification, flags/fragment
+        0:16, 0:16,
+        %% TTL, protocol, checksum
+        Ttl:8, Protocol:8, 0:16,
+        %% source address
+        Saddr:4/binary,
+        %% destination address
+        Daddr:4/binary>>.
 
 build_ipv6_header(Saddr, Daddr, IpOpts, NextHeader, PayloadLen) ->
     HopLimit = maps:get(ttl, IpOpts, 64),
-    <<6:4, 0:8, 0:20,                    %% version, traffic class, flow label
-      PayloadLen:16/big,                  %% payload length
-      NextHeader:8, HopLimit:8,           %% next header, hop limit
-      Saddr:16/binary,                    %% source address
-      Daddr:16/binary>>.                  %% destination address
+    %% version, traffic class, flow label
+    <<6:4, 0:8, 0:20,
+        %% payload length
+        PayloadLen:16/big,
+        %% next header, hop limit
+        NextHeader:8, HopLimit:8,
+        %% source address
+        Saddr:16/binary,
+        %% destination address
+        Daddr:16/binary>>.
 
 base_packet(IpHeader, TransportHeader, L4Proto, _IpOpts, Meta, CtState) ->
     TotalLen = byte_size(IpHeader) + byte_size(TransportHeader),
-    NfProto = case IpHeader of
-        <<4:4, _/bitstring>> -> 2;   %% IPv4
-        <<6:4, _/bitstring>> -> 10;  %% IPv6
-        _ -> 2
-    end,
+    NfProto =
+        case IpHeader of
+            %% IPv4
+            <<4:4, _/bitstring>> -> 2;
+            %% IPv6
+            <<6:4, _/bitstring>> -> 10;
+            _ -> 2
+        end,
     #{
-        network    => IpHeader,
-        transport  => TransportHeader,
-        link       => <<>>,
-        nfproto    => NfProto,
-        l4proto    => L4Proto,
-        iif        => maps:get(iif, Meta, 0),
-        oif        => maps:get(oif, Meta, 0),
-        iifname    => maps:get(iifname, Meta, <<>>),
-        oifname    => maps:get(oifname, Meta, <<>>),
-        len        => TotalLen,
-        mark       => maps:get(mark, Meta, 0),
-        ct_state   => ct_val(CtState),
-        ct_mark    => maps:get(ct_mark, Meta, 0),
-        ct_status  => maps:get(ct_status, Meta, 0),
-        sets       => maps:get(sets, Meta, #{})
+        network => IpHeader,
+        transport => TransportHeader,
+        link => <<>>,
+        nfproto => NfProto,
+        l4proto => L4Proto,
+        iif => maps:get(iif, Meta, 0),
+        oif => maps:get(oif, Meta, 0),
+        iifname => maps:get(iifname, Meta, <<>>),
+        oifname => maps:get(oifname, Meta, <<>>),
+        len => TotalLen,
+        mark => maps:get(mark, Meta, 0),
+        ct_state => ct_val(CtState),
+        ct_mark => maps:get(ct_mark, Meta, 0),
+        ct_status => maps:get(ct_status, Meta, 0),
+        sets => maps:get(sets, Meta, #{})
     }.
 
 ip_to_bin({A, B, C, D}) -> <<A, B, C, D>>;
@@ -273,31 +301,31 @@ ip_to_bin({A, B, C, D, E, F, G, H}) -> <<A:16, B:16, C:16, D:16, E:16, F:16, G:1
 ip_to_bin(Bin) when is_binary(Bin), byte_size(Bin) =:= 4 -> Bin;
 ip_to_bin(Bin) when is_binary(Bin), byte_size(Bin) =:= 16 -> Bin.
 
-tcp_flags(syn)     -> 2#000010;
-tcp_flags(ack)     -> 2#010000;
-tcp_flags(fin)     -> 2#000001;
-tcp_flags(rst)     -> 2#000100;
-tcp_flags(psh)     -> 2#001000;
+tcp_flags(syn) -> 2#000010;
+tcp_flags(ack) -> 2#010000;
+tcp_flags(fin) -> 2#000001;
+tcp_flags(rst) -> 2#000100;
+tcp_flags(psh) -> 2#001000;
 tcp_flags(syn_ack) -> 2#010010;
 tcp_flags(fin_ack) -> 2#010001;
-tcp_flags(none)    -> 0;
+tcp_flags(none) -> 0;
 tcp_flags(N) when is_integer(N) -> N.
 
-ct_from_flags(syn)  -> ?CT_NEW;
-ct_from_flags(ack)  -> ?CT_ESTABLISHED;
+ct_from_flags(syn) -> ?CT_NEW;
+ct_from_flags(ack) -> ?CT_ESTABLISHED;
 ct_from_flags(syn_ack) -> ?CT_ESTABLISHED;
-ct_from_flags(_)    -> ?CT_NEW.
+ct_from_flags(_) -> ?CT_NEW.
 
-ct_val(new)              -> ?CT_NEW;
-ct_val(established)      -> ?CT_ESTABLISHED;
-ct_val(related)          -> ?CT_RELATED;
+ct_val(new) -> ?CT_NEW;
+ct_val(established) -> ?CT_ESTABLISHED;
+ct_val(related) -> ?CT_RELATED;
 ct_val(established_reply) -> ?CT_ESTABLISHED_REPLY;
-ct_val(invalid)          -> ?CT_INVALID;
-ct_val(untracked)        -> ?CT_UNTRACKED;
+ct_val(invalid) -> ?CT_INVALID;
+ct_val(untracked) -> ?CT_UNTRACKED;
 ct_val(N) when is_integer(N) -> N.
 
 icmp_type(echo_request) -> 8;
-icmp_type(echo_reply)   -> 0;
+icmp_type(echo_reply) -> 0;
 icmp_type(dest_unreachable) -> 3;
 icmp_type(time_exceeded) -> 11;
 icmp_type(N) when is_integer(N) -> N.

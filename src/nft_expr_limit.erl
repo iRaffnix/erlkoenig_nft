@@ -49,14 +49,15 @@ Usage:
 Corresponds to libnftnl src/expr/limit.c.
 """.
 
--export([new/1,
-         pps/2,
-         bps/2,
-         over_pps/2,
-         over_bps/2]).
+-export([
+    new/1,
+    pps/2,
+    bps/2,
+    over_pps/2,
+    over_bps/2
+]).
 
 -include("nft_constants.hrl").
-
 
 %% --- Public API ---
 
@@ -72,12 +73,16 @@ Options:
 """.
 -spec new(map()) -> binary().
 new(Opts) ->
-    Rate  = maps:get(rate, Opts),
-    Unit  = maps:get(unit, Opts, 1),
+    Rate = maps:get(rate, Opts),
+    Unit = maps:get(unit, Opts, 1),
     Burst = maps:get(burst, Opts, 5),
-    Type  = limit_type(maps:get(type, Opts, pkts)),
-    Inv   = maps:get(inv, Opts, false),
-    Flags = case Inv of true -> ?NFT_LIMIT_F_INV; false -> 0 end,
+    Type = limit_type(maps:get(type, Opts, pkts)),
+    Inv = maps:get(inv, Opts, false),
+    Flags =
+        case Inv of
+            true -> ?NFT_LIMIT_F_INV;
+            false -> 0
+        end,
 
     Attrs = iolist_to_binary([
         nfnl_attr:encode_u64(?NFTA_LIMIT_RATE, Rate),
@@ -127,6 +132,6 @@ over_bps(Rate, Burst) ->
 
 %% --- Internal ---
 
--spec limit_type(pkts | bytes) -> non_neg_integer().
-limit_type(pkts)  -> ?NFT_LIMIT_PKTS;
+-spec limit_type(pkts | bytes) -> 0 | 1.
+limit_type(pkts) -> ?NFT_LIMIT_PKTS;
 limit_type(bytes) -> ?NFT_LIMIT_PKT_BYTES.

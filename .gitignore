@@ -1,10 +1,40 @@
+# Rebar3
 _build/
+_checkouts/
+_vendor/
+.rebar3/
+rebar3.crashdump
+erl_crash.dump
 deps/
 rebar.lock
+
+# Elixir DSL
 dsl/_build/
 dsl/deps/
 dsl/mix.lock
 dsl/erlkoenig
+
+# Compiled
+*.o
 *.beam
-erl_crash.dump
+*.plt
+ebin/
+
+# Test / Logs
+.eunit/
+log/
+logs/
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+
+# Runtime
+.erlang.cookie
+
+# Internal
 .claude/
+idoc/

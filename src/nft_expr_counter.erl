@@ -55,9 +55,12 @@ Typically both are 0. Non-zero values can be used to restore
 counters after a rule reload.
 """.
 -spec new(non_neg_integer(), non_neg_integer()) -> binary().
-new(Packets, Bytes)
-  when is_integer(Packets), Packets >= 0,
-       is_integer(Bytes), Bytes >= 0 ->
+new(Packets, Bytes) when
+    is_integer(Packets),
+    Packets >= 0,
+    is_integer(Bytes),
+    Bytes >= 0
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_u64(?NFTA_COUNTER_BYTES, Bytes),
         nfnl_attr:encode_u64(?NFTA_COUNTER_PACKETS, Packets)

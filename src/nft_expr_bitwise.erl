@@ -49,16 +49,24 @@ Example:
     nft_expr_bitwise:mask(1, 1, <<0, 0, 0, 6>>, <<0, 0, 0, 0>>)
 """.
 -spec mask(non_neg_integer(), non_neg_integer(), binary(), binary()) -> binary().
-mask(SReg, DReg, Mask, Xor)
-  when is_integer(SReg), SReg >= 0,
-       is_integer(DReg), DReg >= 0,
-       is_binary(Mask), is_binary(Xor),
-       byte_size(Mask) =:= byte_size(Xor) ->
+mask(SReg, DReg, Mask, Xor) when
+    is_integer(SReg),
+    SReg >= 0,
+    is_integer(DReg),
+    DReg >= 0,
+    is_binary(Mask),
+    is_binary(Xor),
+    byte_size(Mask) =:= byte_size(Xor)
+->
     Len = byte_size(Mask),
-    MaskNest = nfnl_attr:encode_nested(?NFTA_BITWISE_MASK,
-        nfnl_attr:encode(?NFTA_DATA_VALUE, Mask)),
-    XorNest = nfnl_attr:encode_nested(?NFTA_BITWISE_XOR,
-        nfnl_attr:encode(?NFTA_DATA_VALUE, Xor)),
+    MaskNest = nfnl_attr:encode_nested(
+        ?NFTA_BITWISE_MASK,
+        nfnl_attr:encode(?NFTA_DATA_VALUE, Mask)
+    ),
+    XorNest = nfnl_attr:encode_nested(
+        ?NFTA_BITWISE_XOR,
+        nfnl_attr:encode(?NFTA_DATA_VALUE, Xor)
+    ),
     Attrs = iolist_to_binary([
         nfnl_attr:encode_u32(?NFTA_BITWISE_SREG, SReg),
         nfnl_attr:encode_u32(?NFTA_BITWISE_DREG, DReg),

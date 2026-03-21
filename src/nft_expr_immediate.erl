@@ -49,12 +49,14 @@ The nested structure for a verdict is:
 Corresponds to libnftnl src/expr/immediate.c.
 """.
 
--export([accept/0,
-         drop/0,
-         return/0,
-         verdict/1,
-         jump/1,
-         goto/1]).
+-export([
+    accept/0,
+    drop/0,
+    return/0,
+    verdict/1,
+    jump/1,
+    goto/1
+]).
 
 -export_type([verdict_type/0]).
 
@@ -63,7 +65,6 @@ Corresponds to libnftnl src/expr/immediate.c.
 -type verdict_type() :: accept | drop | return.
 
 -include("nft_constants.hrl").
-
 
 %% --- Public API ---
 
@@ -87,8 +88,10 @@ Example:
 """.
 -spec verdict(verdict_type()) -> binary().
 verdict(V) when is_atom(V) ->
-    VerdictNest = nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
-        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, verdict_code(V))),
+    VerdictNest = nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
+        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, verdict_code(V))
+    ),
     build_verdict(VerdictNest).
 
 -doc """
@@ -116,16 +119,18 @@ goto(Chain) when is_binary(Chain), byte_size(Chain) > 0 ->
 
 %% --- Internal ---
 
--spec chain_verdict(non_neg_integer(), binary()) -> binary().
+-spec chain_verdict(4294967292 | 4294967293, binary()) -> binary().
 chain_verdict(Code, Chain) ->
-    VerdictNest = nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+    VerdictNest = nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
         iolist_to_binary([
             nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, Code),
             nfnl_attr:encode_str(?NFTA_VERDICT_CHAIN, Chain)
-        ])),
+        ])
+    ),
     build_verdict(VerdictNest).
 
--spec build_verdict(binary()) -> binary().
+-spec build_verdict(<<_:32, _:_*8>>) -> binary().
 build_verdict(VerdictNest) ->
     DataNest = nfnl_attr:encode_nested(?NFTA_IMMEDIATE_DATA, VerdictNest),
     Attrs = iolist_to_binary([
@@ -134,7 +139,7 @@ build_verdict(VerdictNest) ->
     ]),
     nft_expr:build(<<"immediate">>, Attrs).
 
--spec verdict_code(verdict_type()) -> non_neg_integer().
+-spec verdict_code(verdict_type()) -> 0 | 1 | 4294967291.
 verdict_code(accept) -> ?NF_ACCEPT;
-verdict_code(drop)   -> ?NF_DROP;
+verdict_code(drop) -> ?NF_DROP;
 verdict_code(return) -> ?NFT_RETURN.

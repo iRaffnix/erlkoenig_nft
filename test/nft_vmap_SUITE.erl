@@ -33,20 +33,24 @@ Kernel group: create table + vmap + chains + dispatch rule, verify with nft -j.
 -define(VMAP, <<"port_dispatch">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        ir_vmap_lookup_structure,
-        ir_vmap_lookup_has_dreg_zero,
-        vmap_set_has_map_flag,
-        vmap_dispatch_rule_structure,
-        vmap_elem_encoding
-     ]},
-     {kernel, [], [
-        kernel_vmap_dispatch
-     ]}].
+    [
+        {unit, [parallel], [
+            ir_vmap_lookup_structure,
+            ir_vmap_lookup_has_dreg_zero,
+            vmap_set_has_map_flag,
+            vmap_dispatch_rule_structure,
+            vmap_elem_encoding
+        ]},
+        {kernel, [], [
+            kernel_vmap_dispatch
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -80,10 +84,16 @@ ir_vmap_lookup_has_dreg_zero(_) ->
     ?assertEqual(0, maps:get(dreg, Opts)).
 
 vmap_set_has_map_flag(_) ->
-    Msg = nft_set:add_vmap(?NFPROTO_INET, #{
-        table => <<"fw">>, name => <<"pd">>,
-        type => inet_service
-    }, 1, 100),
+    Msg = nft_set:add_vmap(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => <<"pd">>,
+            type => inet_service
+        },
+        1,
+        100
+    ),
     %% NFT_MSG_NEWSET = 9, type = (10 << 8) | 9 = 2569
     <<_Len:32/little, 2569:16/little, _/binary>> = Msg,
     <<_:20/binary, Attrs/binary>> = Msg,
@@ -97,18 +107,27 @@ vmap_set_has_map_flag(_) ->
 
 vmap_dispatch_rule_structure(_) ->
     Rule = nft_rules:vmap_dispatch(tcp, <<"my_vmap">>),
-    ?assertMatch([
-        {meta, #{key := l4proto, dreg := 1}},
-        {cmp, #{sreg := 1, op := eq, data := <<6>>}},
-        {payload, #{base := transport, offset := 2, len := 2, dreg := 1}},
-        {lookup, #{sreg := 1, set := <<"my_vmap">>, dreg := 0}}
-    ], Rule).
+    ?assertMatch(
+        [
+            {meta, #{key := l4proto, dreg := 1}},
+            {cmp, #{sreg := 1, op := eq, data := <<6>>}},
+            {payload, #{base := transport, offset := 2, len := 2, dreg := 1}},
+            {lookup, #{sreg := 1, set := <<"my_vmap">>, dreg := 0}}
+        ],
+        Rule
+    ).
 
 vmap_elem_encoding(_) ->
-    Msg = nft_set_elem:add_vmap_elems(?NFPROTO_INET, <<"fw">>, <<"pd">>, [
-        {<<22:16/big>>, {jump, <<"ssh_chain">>}},
-        {<<80:16/big>>, accept}
-    ], 1),
+    Msg = nft_set_elem:add_vmap_elems(
+        ?NFPROTO_INET,
+        <<"fw">>,
+        <<"pd">>,
+        [
+            {<<22:16/big>>, {jump, <<"ssh_chain">>}},
+            {<<80:16/big>>, accept}
+        ],
+        1
+    ),
     %% NFT_MSG_NEWSETELEM = 12, type = (10 << 8) | 12 = 2572
     <<_Len:32/little, 2572:16/little, _/binary>> = Msg,
     ?assert(byte_size(Msg) > 20).
@@ -127,39 +146,80 @@ kernel_vmap_dispatch(_Config) ->
 
     %% Create regular chains that the vmap will jump to
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_chain:add_regular(?NFPROTO_INET, #{
-            table => ?TABLE, name => <<"ssh_chain">>
-        }, Seq) end,
-        fun(Seq) -> nft_chain:add_regular(?NFPROTO_INET, #{
-            table => ?TABLE, name => <<"http_chain">>
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add_regular(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE, name => <<"ssh_chain">>
+                },
+                Seq
+            )
+        end,
+        fun(Seq) ->
+            nft_chain:add_regular(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE, name => <<"http_chain">>
+                },
+                Seq
+            )
+        end
     ]),
 
     %% Create the vmap set
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_set:add_vmap(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?VMAP,
-            type => inet_service
-        }, 1, Seq) end
+        fun(Seq) ->
+            nft_set:add_vmap(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?VMAP,
+                    type => inet_service
+                },
+                1,
+                Seq
+            )
+        end
     ]),
 
     %% Add vmap elements
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_set_elem:add_vmap_elems(?NFPROTO_INET, ?TABLE, ?VMAP, [
-            {<<22:16/big>>, {jump, <<"ssh_chain">>}},
-            {<<80:16/big>>, {jump, <<"http_chain">>}}
-        ], Seq) end
+        fun(Seq) ->
+            nft_set_elem:add_vmap_elems(
+                ?NFPROTO_INET,
+                ?TABLE,
+                ?VMAP,
+                [
+                    {<<22:16/big>>, {jump, <<"ssh_chain">>}},
+                    {<<80:16/big>>, {jump, <<"http_chain">>}}
+                ],
+                Seq
+            )
+        end
     ]),
 
     %% Create base chain with dispatch rule
     ok = nfnl_server:apply_msgs(Pid, [
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 100, policy => accept
-        }, Seq) end,
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            nft_rules:vmap_dispatch(tcp, ?VMAP))
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 100,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            nft_rules:vmap_dispatch(tcp, ?VMAP)
+        )
     ]),
 
     %% Verify structure with nft -j
@@ -190,7 +250,8 @@ kernel_vmap_dispatch(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

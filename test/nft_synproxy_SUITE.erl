@@ -35,22 +35,26 @@ and are accepted by nf_tables via `nft -j`.
 -define(TCP, 6).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        synproxy_ir_term,
-        synproxy_filter_rule_structure,
-        synproxy_rules_returns_two_lists,
-        synproxy_flags_timestamp_sack,
-        synproxy_vm_terminal_verdict,
-        synproxy_vm_wrong_port_breaks,
-        synproxy_vm_chain_untracked_syn
-     ]},
-     {kernel, [], [
-        kernel_synproxy_rules
-     ]}].
+    [
+        {unit, [parallel], [
+            synproxy_ir_term,
+            synproxy_filter_rule_structure,
+            synproxy_rules_returns_two_lists,
+            synproxy_flags_timestamp_sack,
+            synproxy_vm_terminal_verdict,
+            synproxy_vm_wrong_port_breaks,
+            synproxy_vm_chain_untracked_syn
+        ]},
+        {kernel, [], [
+            kernel_synproxy_rules
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -93,32 +97,46 @@ synproxy_filter_rule_structure(_) ->
 
 synproxy_rules_returns_two_lists(_) ->
     %% synproxy_rules/2 returns {NotrackRules, FilterRules}
-    {Notrack, Filter} = nft_rules:synproxy_rules([80, 443],
-        #{mss => 1460, wscale => 7}),
+    {Notrack, Filter} = nft_rules:synproxy_rules(
+        [80, 443],
+        #{mss => 1460, wscale => 7}
+    ),
     ?assertEqual(2, length(Notrack)),
     ?assertEqual(2, length(Filter)),
     %% Each notrack rule ends with notrack expression
-    lists:foreach(fun(R) ->
-        {notrack, #{}} = lists:last(R)
-    end, Notrack),
+    lists:foreach(
+        fun(R) ->
+            {notrack, #{}} = lists:last(R)
+        end,
+        Notrack
+    ),
     %% Each filter rule ends with synproxy expression
-    lists:foreach(fun(R) ->
-        {synproxy, _} = lists:last(R)
-    end, Filter).
+    lists:foreach(
+        fun(R) ->
+            {synproxy, _} = lists:last(R)
+        end,
+        Filter
+    ).
 
 synproxy_flags_timestamp_sack(_) ->
     %% timestamp=true, sack_perm=true should set flags=3
-    Rule = nft_expr_ir:synproxy_filter_rule(80,
-        #{mss => 1460, wscale => 7, timestamp => true, sack_perm => true}),
+    Rule = nft_expr_ir:synproxy_filter_rule(
+        80,
+        #{mss => 1460, wscale => 7, timestamp => true, sack_perm => true}
+    ),
     {synproxy, #{flags := Flags}} = lists:last(Rule),
     ?assertEqual(3, Flags),
     %% timestamp only = 1
-    Rule2 = nft_expr_ir:synproxy_filter_rule(80,
-        #{mss => 1460, wscale => 7, timestamp => true}),
+    Rule2 = nft_expr_ir:synproxy_filter_rule(
+        80,
+        #{mss => 1460, wscale => 7, timestamp => true}
+    ),
     {synproxy, #{flags := 1}} = lists:last(Rule2),
     %% sack_perm only = 2
-    Rule3 = nft_expr_ir:synproxy_filter_rule(80,
-        #{mss => 1460, wscale => 7, sack_perm => true}),
+    Rule3 = nft_expr_ir:synproxy_filter_rule(
+        80,
+        #{mss => 1460, wscale => 7, sack_perm => true}
+    ),
     {synproxy, #{flags := 2}} = lists:last(Rule3).
 
 synproxy_vm_terminal_verdict(_) ->
@@ -133,18 +151,20 @@ synproxy_vm_wrong_port_breaks(_) ->
     Rule = nft_rules:synproxy_filter_rule(80, #{mss => 1460, wscale => 7}),
     %% Packet with TCP dport 443, ct_state untracked
     Pkt = nft_vm_pkt:tcp(
-        #{saddr => {10,0,0,1}},
+        #{saddr => {10, 0, 0, 1}},
         #{dport => 443},
-        #{ct_state => untracked}),
+        #{ct_state => untracked}
+    ),
     {break, _, _} = nft_vm:eval_rule(Rule, Pkt, nft_vm:new_regs()).
 
 synproxy_vm_chain_untracked_syn(_) ->
     %% A synproxy filter rule for port 80 should match untracked TCP to port 80
     Rule = nft_rules:synproxy_filter_rule(80, #{mss => 1460, wscale => 7}),
     Pkt = nft_vm_pkt:tcp(
-        #{saddr => {10,0,0,1}},
+        #{saddr => {10, 0, 0, 1}},
         #{dport => 80},
-        #{ct_state => untracked}),
+        #{ct_state => untracked}
+    ),
     {{synproxy, _}, _} = nft_vm:eval_chain([Rule], Pkt, drop).
 
 %% ===================================================================
@@ -154,23 +174,43 @@ synproxy_vm_chain_untracked_syn(_) ->
 kernel_synproxy_rules(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     %% Build synproxy rules for port 80
-    {[NotrackRule], [FilterRule]} = nft_rules:synproxy_rules([80],
-        #{mss => 1460, wscale => 7, timestamp => true, sack_perm => true}),
+    {[NotrackRule], [FilterRule]} = nft_rules:synproxy_rules(
+        [80],
+        #{mss => 1460, wscale => 7, timestamp => true, sack_perm => true}
+    ),
 
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
         %% Raw chain for notrack (priority -300)
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?RAW_CHAIN,
-            hook => prerouting, type => filter,
-            priority => -300, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?RAW_CHAIN,
+                    hook => prerouting,
+                    type => filter,
+                    priority => -300,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         %% Filter chain
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?FILTER_CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => drop
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?FILTER_CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => drop
+                },
+                Seq
+            )
+        end,
         %% Notrack rule in raw chain
         nft_encode:rule_fun(?NFPROTO_INET, ?TABLE, ?RAW_CHAIN, NotrackRule),
         %% Synproxy rule in filter chain
@@ -202,19 +242,30 @@ nft_json(Cmd) ->
     Items.
 
 rules_for_chain(Items, ChainName) ->
-    [Rule || #{<<"rule">> := Rule = #{<<"chain">> := C}} <- Items,
-             C =:= ChainName].
+    [
+        Rule
+     || #{<<"rule">> := Rule = #{<<"chain">> := C}} <- Items,
+        C =:= ChainName
+    ].
 
 has_notrack_expr(#{<<"expr">> := Exprs}) ->
-    lists:any(fun
-        (#{<<"notrack">> := _}) -> true;
-        (_) -> false
-    end, Exprs);
-has_notrack_expr(_) -> false.
+    lists:any(
+        fun
+            (#{<<"notrack">> := _}) -> true;
+            (_) -> false
+        end,
+        Exprs
+    );
+has_notrack_expr(_) ->
+    false.
 
 has_synproxy_expr(#{<<"expr">> := Exprs}) ->
-    lists:any(fun
-        (#{<<"synproxy">> := _}) -> true;
-        (_) -> false
-    end, Exprs);
-has_synproxy_expr(_) -> false.
+    lists:any(
+        fun
+            (#{<<"synproxy">> := _}) -> true;
+            (_) -> false
+        end,
+        Exprs
+    );
+has_synproxy_expr(_) ->
+    false.

@@ -52,7 +52,13 @@ Example:
     Msg = nft_quota:add(1, <<"fw">>, <<"bandwidth">>,
         #{bytes => 1073741824, flags => 0}, Seq)
 """.
--spec add(0..255, binary(), binary(), map(), non_neg_integer()) ->
+-spec add(
+    0..255,
+    binary(),
+    binary(),
+    #{bytes := non_neg_integer(), flags := non_neg_integer()},
+    non_neg_integer()
+) ->
     nfnl_msg:nl_msg().
 add(Family, Table, Name, #{bytes := Bytes, flags := Flags}, Seq) ->
     QuotaData = iolist_to_binary([

@@ -7,18 +7,20 @@
 -define(NFT_REG_1, 1).
 
 all() ->
-    [meta_load_l4proto,
-     cmp_eq_tcp,
-     cmp_neq,
-     payload_tcp_dport,
-     payload_ip_saddr,
-     immediate_accept,
-     immediate_drop,
-     immediate_jump,
-     expr_name_encoded,
-     expr_data_nested,
-     rule_has_expressions,
-     full_tcp_dport_80_accept].
+    [
+        meta_load_l4proto,
+        cmp_eq_tcp,
+        cmp_neq,
+        payload_tcp_dport,
+        payload_ip_saddr,
+        immediate_accept,
+        immediate_drop,
+        immediate_jump,
+        expr_name_encoded,
+        expr_data_nested,
+        rule_has_expressions,
+        full_tcp_dport_80_accept
+    ].
 
 %% --- Meta ---
 
@@ -34,8 +36,10 @@ meta_load_l4proto(_) ->
 cmp_eq_tcp(_) ->
     Bin = nft_expr_cmp:eq(?NFT_REG_1, <<6>>),
     {<<"cmp">>, Attrs} = decode_expr(Bin),
-    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)),  %% SREG=1
-    ?assertMatch({2, <<0:32/big>>}, lists:keyfind(2, 1, Attrs)),  %% OP=EQ(0)
+    %% SREG=1
+    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)),
+    %% OP=EQ(0)
+    ?assertMatch({2, <<0:32/big>>}, lists:keyfind(2, 1, Attrs)),
     %% NFTA_CMP_DATA(3) is nested with NFTA_DATA_VALUE(1) = <<6>>
     {3, nested, DataAttrs} = lists:keyfind(3, 1, Attrs),
     ?assertMatch({1, <<6>>}, lists:keyfind(1, 1, DataAttrs)).
@@ -43,24 +47,32 @@ cmp_eq_tcp(_) ->
 cmp_neq(_) ->
     Bin = nft_expr_cmp:neq(?NFT_REG_1, <<17>>),
     {<<"cmp">>, Attrs} = decode_expr(Bin),
-    ?assertMatch({2, <<1:32/big>>}, lists:keyfind(2, 1, Attrs)).  %% OP=NEQ(1)
+    %% OP=NEQ(1)
+    ?assertMatch({2, <<1:32/big>>}, lists:keyfind(2, 1, Attrs)).
 
 %% --- Payload ---
 
 payload_tcp_dport(_) ->
     Bin = nft_expr_payload:tcp_dport(?NFT_REG_1),
     {<<"payload">>, Attrs} = decode_expr(Bin),
-    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)),  %% DREG=1
-    ?assertMatch({2, <<2:32/big>>}, lists:keyfind(2, 1, Attrs)),  %% BASE=transport(2)
-    ?assertMatch({3, <<2:32/big>>}, lists:keyfind(3, 1, Attrs)),  %% OFFSET=2
-    ?assertMatch({4, <<2:32/big>>}, lists:keyfind(4, 1, Attrs)).  %% LEN=2
+    %% DREG=1
+    ?assertMatch({1, <<1:32/big>>}, lists:keyfind(1, 1, Attrs)),
+    %% BASE=transport(2)
+    ?assertMatch({2, <<2:32/big>>}, lists:keyfind(2, 1, Attrs)),
+    %% OFFSET=2
+    ?assertMatch({3, <<2:32/big>>}, lists:keyfind(3, 1, Attrs)),
+    %% LEN=2
+    ?assertMatch({4, <<2:32/big>>}, lists:keyfind(4, 1, Attrs)).
 
 payload_ip_saddr(_) ->
     Bin = nft_expr_payload:ip_saddr(?NFT_REG_1),
     {<<"payload">>, Attrs} = decode_expr(Bin),
-    ?assertMatch({2, <<1:32/big>>}, lists:keyfind(2, 1, Attrs)),  %% BASE=network(1)
-    ?assertMatch({3, <<12:32/big>>}, lists:keyfind(3, 1, Attrs)), %% OFFSET=12
-    ?assertMatch({4, <<4:32/big>>}, lists:keyfind(4, 1, Attrs)).  %% LEN=4
+    %% BASE=network(1)
+    ?assertMatch({2, <<1:32/big>>}, lists:keyfind(2, 1, Attrs)),
+    %% OFFSET=12
+    ?assertMatch({3, <<12:32/big>>}, lists:keyfind(3, 1, Attrs)),
+    %% LEN=4
+    ?assertMatch({4, <<4:32/big>>}, lists:keyfind(4, 1, Attrs)).
 
 %% --- Immediate ---
 

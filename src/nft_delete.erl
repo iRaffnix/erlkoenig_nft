@@ -31,11 +31,13 @@ Note: deleting a table also deletes all chains, rules, and sets
 within it. This is the simplest way to do a full cleanup.
 """.
 
--export([table/3,
-         chain/4,
-         flush_chain/4,
-         rule/5,
-         set/4]).
+-export([
+    table/3,
+    chain/4,
+    flush_chain/4,
+    rule/5,
+    set/4
+]).
 
 -include("nft_constants.hrl").
 
@@ -48,8 +50,9 @@ Example:
     Msg = nft_delete:table(1, <<"fw">>, Seq)
 """.
 -spec table(0..255, binary(), non_neg_integer()) -> nfnl_msg:nl_msg().
-table(Family, Name, Seq)
-  when is_integer(Family), is_binary(Name), is_integer(Seq) ->
+table(Family, Name, Seq) when
+    is_integer(Family), is_binary(Name), is_integer(Seq)
+->
     Attrs = nfnl_attr:encode_str(?NFTA_TABLE_NAME, Name),
     Flags = ?NLM_F_REQUEST bor ?NLM_F_ACK,
     nfnl_msg:build_hdr(?NFT_MSG_DELTABLE, Family, Flags, Seq, Attrs).
@@ -64,8 +67,9 @@ Example:
     Msg = nft_delete:chain(1, <<"fw">>, <<"input">>, Seq)
 """.
 -spec chain(0..255, binary(), binary(), non_neg_integer()) -> nfnl_msg:nl_msg().
-chain(Family, Table, Name, Seq)
-  when is_integer(Family), is_binary(Table), is_binary(Name), is_integer(Seq) ->
+chain(Family, Table, Name, Seq) when
+    is_integer(Family), is_binary(Table), is_binary(Name), is_integer(Seq)
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_CHAIN_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_CHAIN_NAME, Name)
@@ -83,8 +87,9 @@ Example:
     Msg = nft_delete:flush_chain(1, <<"fw">>, <<"input">>, Seq)
 """.
 -spec flush_chain(0..255, binary(), binary(), non_neg_integer()) -> nfnl_msg:nl_msg().
-flush_chain(Family, Table, Chain, Seq)
-  when is_integer(Family), is_binary(Table), is_binary(Chain), is_integer(Seq) ->
+flush_chain(Family, Table, Chain, Seq) when
+    is_integer(Family), is_binary(Table), is_binary(Chain), is_integer(Seq)
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_RULE_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_RULE_CHAIN, Chain)
@@ -103,9 +108,13 @@ Example:
 """.
 -spec rule(0..255, binary(), binary(), non_neg_integer(), non_neg_integer()) ->
     nfnl_msg:nl_msg().
-rule(Family, Table, Chain, Handle, Seq)
-  when is_integer(Family), is_binary(Table), is_binary(Chain),
-       is_integer(Handle), is_integer(Seq) ->
+rule(Family, Table, Chain, Handle, Seq) when
+    is_integer(Family),
+    is_binary(Table),
+    is_binary(Chain),
+    is_integer(Handle),
+    is_integer(Seq)
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_RULE_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_RULE_CHAIN, Chain),
@@ -123,8 +132,9 @@ Example:
     Msg = nft_delete:set(1, <<"fw">>, <<"banned">>, Seq)
 """.
 -spec set(0..255, binary(), binary(), non_neg_integer()) -> nfnl_msg:nl_msg().
-set(Family, Table, Name, Seq)
-  when is_integer(Family), is_binary(Table), is_binary(Name), is_integer(Seq) ->
+set(Family, Table, Name, Seq) when
+    is_integer(Family), is_binary(Table), is_binary(Name), is_integer(Seq)
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_SET_NAME, Name)

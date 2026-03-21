@@ -33,30 +33,35 @@ and appears correctly in `nft -j` output.
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        osf_ir_term,
-        osf_match_ir_term,
-        osf_vm_loads_name,
-        osf_vm_empty_default,
-        osf_match_rule_accept,
-        osf_match_rule_drop,
-        osf_match_rule_mismatch,
-        osf_encode_binary
-     ]},
-     {kernel, [], [
-        kernel_osf_rule
-     ]}].
+    [
+        {unit, [parallel], [
+            osf_ir_term,
+            osf_match_ir_term,
+            osf_vm_loads_name,
+            osf_vm_empty_default,
+            osf_match_rule_accept,
+            osf_match_rule_drop,
+            osf_match_rule_mismatch,
+            osf_encode_binary
+        ]},
+        {kernel, [], [
+            kernel_osf_rule
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
         "0\n" ->
             os:cmd("modprobe nft_osf 2>/dev/null"),
             Config;
-        _ -> {skip, "kernel tests require root"}
+        _ ->
+            {skip, "kernel tests require root"}
     end;
 init_per_group(_, Config) ->
     Config.
@@ -127,11 +132,20 @@ kernel_osf_rule(_Config) ->
     OsfRule = [nft_expr_ir:osf(1), nft_expr_ir:accept()],
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, OsfRule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -148,7 +162,8 @@ kernel_osf_rule(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

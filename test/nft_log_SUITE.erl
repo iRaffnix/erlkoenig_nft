@@ -9,15 +9,28 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [log_default, log_with_prefix, log_with_group,
-                         log_with_level, log_full_opts, log_drop_rule,
-                         log_drop_count_rule]},
-     {kernel, [], [kernel_log_rule, kernel_log_with_prefix,
-                   kernel_log_drop_rule]}].
+    [
+        {unit, [parallel], [
+            log_default,
+            log_with_prefix,
+            log_with_group,
+            log_with_level,
+            log_full_opts,
+            log_drop_rule,
+            log_drop_count_rule
+        ]},
+        {kernel, [], [
+            kernel_log_rule,
+            kernel_log_with_prefix,
+            kernel_log_drop_rule
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -89,8 +102,10 @@ kernel_log_rule(_Config) ->
     ok = nfnl_server:apply_msgs(Pid, [
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, [nft_expr_ir:log()])
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
+    Output = os:cmd(
+        "nft list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     ?assertNotEqual(nomatch, string:find(Output, "log")),
     nfnl_server:stop(Pid).
 
@@ -98,11 +113,17 @@ kernel_log_with_prefix(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_chain(Pid),
     ok = nfnl_server:apply_msgs(Pid, [
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            [nft_expr_ir:log(#{prefix => <<"TEST: ">>})])
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            [nft_expr_ir:log(#{prefix => <<"TEST: ">>})]
+        )
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
+    Output = os:cmd(
+        "nft list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     ?assertNotEqual(nomatch, string:find(Output, "TEST:")),
     nfnl_server:stop(Pid).
 
@@ -110,11 +131,17 @@ kernel_log_drop_rule(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     setup_table_and_chain(Pid),
     ok = nfnl_server:apply_msgs(Pid, [
-        nft_encode:rule_fun(inet, ?TABLE, ?CHAIN,
-            nft_rules:log_drop(<<"BLOCKED: ">>))
+        nft_encode:rule_fun(
+            inet,
+            ?TABLE,
+            ?CHAIN,
+            nft_rules:log_drop(<<"BLOCKED: ">>)
+        )
     ]),
-    Output = os:cmd("nft list chain inet " ++ binary_to_list(?TABLE)
-                     ++ " " ++ binary_to_list(?CHAIN)),
+    Output = os:cmd(
+        "nft list chain inet " ++ binary_to_list(?TABLE) ++
+            " " ++ binary_to_list(?CHAIN)
+    ),
     ?assertNotEqual(nomatch, string:find(Output, "log")),
     ?assertNotEqual(nomatch, string:find(Output, "BLOCKED:")),
     ?assertNotEqual(nomatch, string:find(Output, "drop")),
@@ -125,11 +152,20 @@ kernel_log_drop_rule(_Config) ->
 setup_table_and_chain(Pid) ->
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end
     ]).
 
 decode_expr(Bin) ->

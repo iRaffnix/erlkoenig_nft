@@ -35,12 +35,12 @@ Corresponds to NFT_MSG_NEWFLOWTABLE (0x16) in nf_tables.h.
 %% --- Types ---
 
 -type flowtable_opts() :: #{
-    table    := binary(),
-    name     := binary(),
-    hook     := ingress,
+    table := binary(),
+    name := binary(),
+    hook := ingress,
     priority => integer(),
-    devices  => [binary()],
-    flags    => non_neg_integer()
+    devices => [binary()],
+    flags => non_neg_integer()
 }.
 %% Required keys: table, name, hook.
 %% Defaults: priority=0, devices=[], flags=0.
@@ -66,28 +66,38 @@ Example:
     }, Seq).
 """.
 -spec add(0..255, flowtable_opts(), non_neg_integer()) -> nfnl_msg:nl_msg().
-add(Family, Opts, Seq)
-  when is_integer(Family), Family >= 0, Family =< 255,
-       is_map(Opts), is_integer(Seq), Seq >= 0 ->
-    Table   = maps:get(table, Opts),
-    Name    = maps:get(name, Opts),
-    Prio    = maps:get(priority, Opts, 0),
+add(Family, Opts, Seq) when
+    is_integer(Family),
+    Family >= 0,
+    Family =< 255,
+    is_map(Opts),
+    is_integer(Seq),
+    Seq >= 0
+->
+    Table = maps:get(table, Opts),
+    Name = maps:get(name, Opts),
+    Prio = maps:get(priority, Opts, 0),
     Devices = maps:get(devices, Opts, []),
     FtFlags = maps:get(flags, Opts, 0),
 
-    HookNest = nfnl_attr:encode_nested(?NFTA_FLOWTABLE_HOOK,
+    HookNest = nfnl_attr:encode_nested(
+        ?NFTA_FLOWTABLE_HOOK,
         iolist_to_binary([
             nfnl_attr:encode_u32(?NFTA_FLOWTABLE_HOOK_NUM, ?NF_NETDEV_INGRESS),
             nfnl_attr:encode(?NFTA_FLOWTABLE_HOOK_PRIORITY, <<Prio:32/big-signed>>)
-        ])),
+        ])
+    ),
 
-    DevsNest = case Devices of
-        [] -> <<>>;
-        _  ->
-            DevAttrs = iolist_to_binary(
-                [nfnl_attr:encode_str(?NFTA_DEVICE_NAME, D) || D <- Devices]),
-            nfnl_attr:encode_nested(?NFTA_FLOWTABLE_DEVS, DevAttrs)
-    end,
+    DevsNest =
+        case Devices of
+            [] ->
+                <<>>;
+            _ ->
+                DevAttrs = iolist_to_binary(
+                    [nfnl_attr:encode_str(?NFTA_DEVICE_NAME, D) || D <- Devices]
+                ),
+                nfnl_attr:encode_nested(?NFTA_FLOWTABLE_DEVS, DevAttrs)
+        end,
 
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_FLOWTABLE_TABLE, Table),

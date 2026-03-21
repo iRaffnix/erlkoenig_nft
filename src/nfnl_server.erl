@@ -30,21 +30,25 @@ Then used by name from any process:
 
 -behaviour(gen_server).
 
--export([start_link/0,
-         start_link/1,
-         apply_msgs/2,
-         get_counter/4,
-         get_counter_reset/4,
-         list_set_elems/4,
-         list_chains/3,
-         get_ruleset/2,
-         stop/1]).
+-export([
+    start_link/0,
+    start_link/1,
+    apply_msgs/2,
+    get_counter/4,
+    get_counter_reset/4,
+    list_set_elems/4,
+    list_chains/3,
+    get_ruleset/2,
+    stop/1
+]).
 
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2
+]).
 
 -export_type([server_ref/0]).
 
@@ -54,7 +58,7 @@ Then used by name from any process:
 
 -type state() :: #{
     socket := socket:socket(),
-    seq    := non_neg_integer()
+    seq := non_neg_integer()
 }.
 
 %% --- Constants ---
@@ -146,6 +150,7 @@ stop(Server) ->
 
 -spec init(list()) -> {ok, state()} | {stop, term()}.
 init(_Opts) ->
+    proc_lib:set_label(nfnl_server),
     case nfnl_socket:open() of
         {ok, Sock} ->
             Seq = erlang:system_time(second) band 16#FFFFFFFF,
@@ -159,12 +164,13 @@ init(_Opts) ->
 handle_call({apply_msgs, MsgFuns}, _From, #{socket := Sock, seq := Seq} = State) ->
     {Msgs, NextSeq} = build_msgs(MsgFuns, Seq + 1, []),
     Batch = nft_batch:wrap(Msgs, Seq),
-    Result = case nfnl_socket:send(Sock, Batch) of
-        ok ->
-            collect_and_parse(Sock, length(MsgFuns));
-        {error, _} = Err ->
-            Err
-    end,
+    Result =
+        case nfnl_socket:send(Sock, Batch) of
+            ok ->
+                collect_and_parse(Sock, length(MsgFuns));
+            {error, _} = Err ->
+                Err
+        end,
     {reply, Result, State#{seq => NextSeq + 1}};
 handle_call({get_counter, Family, Table, Name}, _From, #{socket := Sock} = State) ->
     Result = nft_object:get_counter(Sock, Family, Table, Name),
@@ -198,8 +204,11 @@ terminate(_Reason, #{socket := Sock}) ->
 
 %% --- Internal ---
 
--spec build_msgs([fun((non_neg_integer()) -> binary())],
-                 non_neg_integer(), [binary()]) ->
+-spec build_msgs(
+    [fun((non_neg_integer()) -> binary())],
+    non_neg_integer(),
+    [binary()]
+) ->
     {[binary()], non_neg_integer()}.
 build_msgs([], Seq, Acc) ->
     {lists:reverse(Acc), Seq};
@@ -208,12 +217,12 @@ build_msgs([Fun | Rest], Seq, Acc) ->
     build_msgs(Rest, Seq + 1, [Msg | Acc]).
 
 -spec collect_and_parse(socket:socket(), non_neg_integer()) ->
-    ok | {error, term()}.
+    ok | {error, atom() | {integer(), atom()}}.
 collect_and_parse(Sock, ExpectedCount) ->
     collect_loop(Sock, ExpectedCount, []).
 
 -spec collect_loop(socket:socket(), non_neg_integer(), [binary()]) ->
-    ok | {error, term()}.
+    ok | {error, atom() | {integer(), atom()}}.
 collect_loop(_Sock, 0, _Acc) ->
     ok;
 collect_loop(Sock, Remaining, Acc) ->
@@ -223,8 +232,9 @@ collect_loop(Sock, Remaining, Acc) ->
             case check_results(Results) of
                 {ok, Count} ->
                     Left = Remaining - Count,
-                    if Left =< 0 -> ok;
-                       true -> collect_loop(Sock, Left, Acc)
+                    if
+                        Left =< 0 -> ok;
+                        true -> collect_loop(Sock, Left, Acc)
                     end;
                 {error, _} = Err ->
                     Err
@@ -236,12 +246,12 @@ collect_loop(Sock, Remaining, Acc) ->
     end.
 
 -spec check_results(nfnl_response:response()) ->
-    {ok, non_neg_integer()} | {error, term()}.
+    {ok, non_neg_integer()} | {error, {integer(), atom()}}.
 check_results(Results) ->
     check_results(Results, 0).
 
 -spec check_results(nfnl_response:response(), non_neg_integer()) ->
-    {ok, non_neg_integer()} | {error, term()}.
+    {ok, non_neg_integer()} | {error, {integer(), atom()}}.
 check_results([], Count) ->
     {ok, Count};
 check_results([ok | Rest], Count) ->

@@ -29,7 +29,7 @@ encode(Opts) when is_map(Opts) ->
     nft_expr:build(<<"byteorder">>, Attrs).
 
 -doc "Return the Netlink expression name.".
--spec name() -> binary().
+-spec name() -> <<_:72>>.
 name() -> <<"byteorder">>.
 
 %% --- Attribute encoders ---

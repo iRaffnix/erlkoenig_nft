@@ -23,7 +23,7 @@ encode(Opts) when is_map(Opts) ->
     nft_expr:build(<<"immediate">>, Attrs).
 
 -doc "Return the Netlink expression name.".
--spec name() -> binary().
+-spec name() -> <<_:72>>.
 name() -> <<"immediate">>.
 
 %% --- Attribute encoders ---

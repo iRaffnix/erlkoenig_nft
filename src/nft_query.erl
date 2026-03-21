@@ -30,11 +30,13 @@ This module works directly with nfnl_socket for send/recv since
 get responses contain data, not just ACK/error codes.
 """.
 
--export([list_tables/2,
-         list_chains/3,
-         list_rules/3,
-         get_ruleset/2,
-         list_set_elems/4]).
+-export([
+    list_tables/2,
+    list_chains/3,
+    list_rules/3,
+    get_ruleset/2,
+    list_set_elems/4
+]).
 
 -include("nft_constants.hrl").
 
@@ -53,16 +55,24 @@ Example:
 -spec list_tables(socket:socket(), 0..255) ->
     {ok, [binary()]} | {error, term()}.
 list_tables(Sock, Family) ->
-    Msg = nfnl_msg:build_hdr(?NFT_MSG_GETTABLE, Family,
-        ?NLM_F_REQUEST bor ?NLM_F_DUMP, seq(), <<>>),
+    Msg = nfnl_msg:build_hdr(
+        ?NFT_MSG_GETTABLE,
+        Family,
+        ?NLM_F_REQUEST bor ?NLM_F_DUMP,
+        seq(),
+        <<>>
+    ),
     case send_and_collect(Sock, Msg) of
         {ok, Responses} ->
-            Tables = lists:filtermap(fun(Attrs) ->
-                case lists:keyfind(?NFTA_TABLE_NAME, 1, Attrs) of
-                    {_, NameBin} -> {true, strip_null(NameBin)};
-                    false -> false
-                end
-            end, Responses),
+            Tables = lists:filtermap(
+                fun(Attrs) ->
+                    case lists:keyfind(?NFTA_TABLE_NAME, 1, Attrs) of
+                        {_, NameBin} -> {true, strip_null(NameBin)};
+                        false -> false
+                    end
+                end,
+                Responses
+            ),
             {ok, Tables};
         {error, _} = Err ->
             Err
@@ -78,15 +88,23 @@ Example:
     %% Chains = [#{name => <<"input">>, policy => 1, ...}]
 """.
 -spec list_chains(socket:socket(), 0..255, binary()) ->
-    {ok, [map()]} | {error, term()}.
+    {ok, [map()]} | {error, atom()}.
 list_chains(Sock, Family, Table) ->
     FilterAttrs = nfnl_attr:encode_str(?NFTA_CHAIN_TABLE, Table),
-    Msg = nfnl_msg:build_hdr(?NFT_MSG_GETCHAIN, Family,
-        ?NLM_F_REQUEST bor ?NLM_F_DUMP, seq(), FilterAttrs),
+    Msg = nfnl_msg:build_hdr(
+        ?NFT_MSG_GETCHAIN,
+        Family,
+        ?NLM_F_REQUEST bor ?NLM_F_DUMP,
+        seq(),
+        FilterAttrs
+    ),
     case send_and_collect(Sock, Msg) of
         {ok, Responses} ->
-            Chains = [parse_chain_attrs(A) || A <- Responses,
-                      table_matches(A, Table)],
+            Chains = [
+                parse_chain_attrs(A)
+             || A <- Responses,
+                table_matches(A, Table)
+            ],
             {ok, Chains};
         {error, _} = Err ->
             Err
@@ -104,15 +122,23 @@ Example:
     %%            counters => [{packets, 42}, {bytes, 3360}]}]
 """.
 -spec list_rules(socket:socket(), 0..255, binary()) ->
-    {ok, [map()]} | {error, term()}.
+    {ok, [map()]} | {error, atom()}.
 list_rules(Sock, Family, Table) ->
     FilterAttrs = nfnl_attr:encode_str(?NFTA_RULE_TABLE, Table),
-    Msg = nfnl_msg:build_hdr(?NFT_MSG_GETRULE, Family,
-        ?NLM_F_REQUEST bor ?NLM_F_DUMP, seq(), FilterAttrs),
+    Msg = nfnl_msg:build_hdr(
+        ?NFT_MSG_GETRULE,
+        Family,
+        ?NLM_F_REQUEST bor ?NLM_F_DUMP,
+        seq(),
+        FilterAttrs
+    ),
     case send_and_collect(Sock, Msg) of
         {ok, Responses} ->
-            Rules = [parse_rule_attrs(A) || A <- Responses,
-                     table_matches(A, Table)],
+            Rules = [
+                parse_rule_attrs(A)
+             || A <- Responses,
+                table_matches(A, Table)
+            ],
             {ok, Rules};
         {error, _} = Err ->
             Err
@@ -127,22 +153,25 @@ list_rules for each table.
 -spec get_ruleset(socket:socket(), 0..255) ->
     {ok, [map()]} | {error, term()}.
 get_ruleset(Sock, Family) ->
-    case list_tables(Sock, Family) of
-        {ok, Tables} ->
-            Result = lists:map(fun(TableName) ->
+    maybe
+        {ok, Tables} ?= list_tables(Sock, Family),
+        Result = lists:map(
+            fun(TableName) ->
                 {ok, Chains} = list_chains(Sock, Family, TableName),
                 {ok, Rules} = list_rules(Sock, Family, TableName),
                 #{table => TableName, chains => Chains, rules => Rules}
-            end, Tables),
-            {ok, Result};
-        {error, _} = Err ->
-            Err
+            end,
+            Tables
+        ),
+        {ok, Result}
+    else
+        {error, _} = Err -> Err
     end.
 
 %% --- Internal: send/recv ---
 
 -spec send_and_collect(socket:socket(), binary()) ->
-    {ok, [[nfnl_attr:nla()]]} | {error, term()}.
+    {ok, [[nfnl_attr:nla()]]} | {error, atom()}.
 send_and_collect(Sock, Msg) ->
     case nfnl_socket:send(Sock, Msg) of
         ok -> collect_dump(Sock, []);
@@ -150,7 +179,7 @@ send_and_collect(Sock, Msg) ->
     end.
 
 -spec collect_dump(socket:socket(), [[nfnl_attr:nla()]]) ->
-    {ok, [[nfnl_attr:nla()]]} | {error, term()}.
+    {ok, [[nfnl_attr:nla()]]} | {error, atom()}.
 collect_dump(Sock, Acc) ->
     case nfnl_socket:recv(Sock) of
         {ok, Data} ->
@@ -168,12 +197,17 @@ collect_dump(Sock, Acc) ->
     {more | done, [[nfnl_attr:nla()]]}.
 parse_dump(<<>>, Acc) ->
     {more, Acc};
-parse_dump(<<Len:32/little, ?NLMSG_DONE:16/little, _/binary>>, Acc)
-  when Len >= 16 ->
+parse_dump(<<Len:32/little, ?NLMSG_DONE:16/little, _/binary>>, Acc) when
+    Len >= 16
+->
     {done, Acc};
-parse_dump(<<Len:32/little, Type:16/little, _Flags:16/little,
-             _Seq:32/little, _Pid:32/little, Rest/binary>>, Acc)
-  when Len >= 20 ->
+parse_dump(
+    <<Len:32/little, Type:16/little, _Flags:16/little, _Seq:32/little, _Pid:32/little,
+        Rest/binary>>,
+    Acc
+) when
+    Len >= 20
+->
     Subsys = Type bsr 8,
     PayloadLen = Len - 16,
     <<Payload:PayloadLen/binary, Tail/binary>> = Rest,
@@ -203,46 +237,53 @@ table_matches(Attrs, Table) ->
 -spec parse_chain_attrs([nfnl_attr:nla()]) -> map().
 parse_chain_attrs(Attrs) ->
     M = #{},
-    M1 = case lists:keyfind(?NFTA_CHAIN_NAME, 1, Attrs) of
-        {_, N} when is_binary(N) -> M#{name => strip_null(N)};
-        _ -> M
-    end,
-    M2 = case lists:keyfind(?NFTA_CHAIN_POLICY, 1, Attrs) of
-        {_, <<P:32/big>>} -> M1#{policy => P};
-        _ -> M1
-    end,
-    M3 = case lists:keyfind(?NFTA_CHAIN_TYPE, 1, Attrs) of
-        {_, T} when is_binary(T) -> M2#{type => strip_null(T)};
-        _ -> M2
-    end,
+    M1 =
+        case lists:keyfind(?NFTA_CHAIN_NAME, 1, Attrs) of
+            {_, N} when is_binary(N) -> M#{name => strip_null(N)};
+            _ -> M
+        end,
+    M2 =
+        case lists:keyfind(?NFTA_CHAIN_POLICY, 1, Attrs) of
+            {_, <<P:32/big>>} -> M1#{policy => P};
+            _ -> M1
+        end,
+    M3 =
+        case lists:keyfind(?NFTA_CHAIN_TYPE, 1, Attrs) of
+            {_, T} when is_binary(T) -> M2#{type => strip_null(T)};
+            _ -> M2
+        end,
     M3.
 
 -spec parse_rule_attrs([nfnl_attr:nla()]) -> map().
 parse_rule_attrs(Attrs) ->
     M = #{},
-    M1 = case lists:keyfind(?NFTA_RULE_CHAIN, 1, Attrs) of
-        {_, C} when is_binary(C) -> M#{chain => strip_null(C)};
-        _ -> M
-    end,
-    M2 = case lists:keyfind(?NFTA_RULE_HANDLE, 1, Attrs) of
-        {_, <<H:64/big>>} -> M1#{handle => H};
-        _ -> M1
-    end,
+    M1 =
+        case lists:keyfind(?NFTA_RULE_CHAIN, 1, Attrs) of
+            {_, C} when is_binary(C) -> M#{chain => strip_null(C)};
+            _ -> M
+        end,
+    M2 =
+        case lists:keyfind(?NFTA_RULE_HANDLE, 1, Attrs) of
+            {_, <<H:64/big>>} -> M1#{handle => H};
+            _ -> M1
+        end,
     %% NFTA_RULE_EXPRESSIONS may come without NLA_F_NESTED from kernel
-    ExprList = case lists:keyfind(?NFTA_RULE_EXPRESSIONS, 1, Attrs) of
-        {?NFTA_RULE_EXPRESSIONS, nested, EL} -> EL;
-        {?NFTA_RULE_EXPRESSIONS, ExprBin} when is_binary(ExprBin) ->
-            nfnl_attr:decode(ExprBin);
-        _ -> []
-    end,
+    ExprList =
+        case lists:keyfind(?NFTA_RULE_EXPRESSIONS, 1, Attrs) of
+            {?NFTA_RULE_EXPRESSIONS, nested, EL} ->
+                EL;
+            {?NFTA_RULE_EXPRESSIONS, ExprBin} when is_binary(ExprBin) ->
+                nfnl_attr:decode(ExprBin);
+            _ ->
+                []
+        end,
     M3 = add_counters(M2, ExprList),
-    M4 = case ExprList of
-        [] -> M3;
-        _ -> M3#{description => nft_decode:rule_description(ExprList)}
-    end,
+    M4 =
+        case ExprList of
+            [] -> M3;
+            _ -> M3#{description => nft_decode:rule_description(ExprList)}
+        end,
     M4.
-
-
 
 -spec add_counters(map(), [nfnl_attr:nla()]) -> map().
 add_counters(M, ExprList) ->
@@ -254,31 +295,40 @@ add_counters(M, ExprList) ->
 
 -spec extract_counters([nfnl_attr:nla()]) -> [{atom(), non_neg_integer()}].
 extract_counters(ExprList) ->
-    lists:foldl(fun(Elem, Acc) ->
-        ExprAttrs = case Elem of
-            {_, nested, A} -> A;
-            {_, Bin} when is_binary(Bin) -> nfnl_attr:decode(Bin);
-            _ -> []
-        end,
-        case lists:keyfind(1, 1, ExprAttrs) of
-            {1, <<"counter", 0>>} ->
-                CtrData = case lists:keyfind(2, 1, ExprAttrs) of
-                    {2, nested, D} -> D;
-                    {2, D} when is_binary(D) -> nfnl_attr:decode(D);
+    lists:foldl(
+        fun(Elem, Acc) ->
+            ExprAttrs =
+                case Elem of
+                    {_, nested, A} -> A;
+                    {_, Bin} when is_binary(Bin) -> nfnl_attr:decode(Bin);
                     _ -> []
                 end,
-                Bytes = case lists:keyfind(1, 1, CtrData) of
-                    {1, <<B:64/big>>} -> B;
-                    _ -> 0
-                end,
-                Pkts = case lists:keyfind(2, 1, CtrData) of
-                    {2, <<P:64/big>>} -> P;
-                    _ -> 0
-                end,
-                [{packets, Pkts}, {bytes, Bytes} | Acc];
-            _ -> Acc
-        end
-    end, [], ExprList).
+            case lists:keyfind(1, 1, ExprAttrs) of
+                {1, <<"counter", 0>>} ->
+                    CtrData =
+                        case lists:keyfind(2, 1, ExprAttrs) of
+                            {2, nested, D} -> D;
+                            {2, D} when is_binary(D) -> nfnl_attr:decode(D);
+                            _ -> []
+                        end,
+                    Bytes =
+                        case lists:keyfind(1, 1, CtrData) of
+                            {1, <<B:64/big>>} -> B;
+                            _ -> 0
+                        end,
+                    Pkts =
+                        case lists:keyfind(2, 1, CtrData) of
+                            {2, <<P:64/big>>} -> P;
+                            _ -> 0
+                        end,
+                    [{packets, Pkts}, {bytes, Bytes} | Acc];
+                _ ->
+                    Acc
+            end
+        end,
+        [],
+        ExprList
+    ).
 
 -spec strip_null(binary()) -> binary().
 strip_null(Bin) ->
@@ -308,8 +358,13 @@ list_set_elems(Sock, Family, Table, SetName) ->
         nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_SET_ELEM_LIST_SET, SetName)
     ]),
-    Msg = nfnl_msg:build_hdr(?NFT_MSG_GETSETELEM, Family,
-        ?NLM_F_REQUEST bor ?NLM_F_DUMP, seq(), FilterAttrs),
+    Msg = nfnl_msg:build_hdr(
+        ?NFT_MSG_GETSETELEM,
+        Family,
+        ?NLM_F_REQUEST bor ?NLM_F_DUMP,
+        seq(),
+        FilterAttrs
+    ),
     case send_and_collect(Sock, Msg) of
         {ok, Responses} ->
             Elems = lists:flatmap(fun extract_set_elems/1, Responses),
@@ -351,7 +406,8 @@ extract_key(ElemAttrs) ->
                 {_, Val} -> {true, format_set_val(Val)};
                 _ -> false
             end;
-        _ -> false
+        _ ->
+            false
     end.
 
 -spec format_set_val(binary()) -> binary().

@@ -25,14 +25,25 @@
 -define(CHAIN, <<"input">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [encode_queue_basic, encode_queue_with_total,
-                         encode_queue_with_flags, encode_queue_bypass_fanout]},
-     {kernel, [], [kernel_queue_basic, kernel_queue_bypass,
-                   kernel_queue_fanout]}].
+    [
+        {unit, [parallel], [
+            encode_queue_basic,
+            encode_queue_with_total,
+            encode_queue_with_flags,
+            encode_queue_bypass_fanout
+        ]},
+        {kernel, [], [
+            kernel_queue_basic,
+            kernel_queue_bypass,
+            kernel_queue_fanout
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -87,11 +98,20 @@ kernel_queue_basic(_Config) ->
     Rule = nft_rules:queue_rule(53, udp, #{num => 100}),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -110,11 +130,20 @@ kernel_queue_bypass(_Config) ->
     Rule = nft_rules:queue_rule(80, tcp, #{num => 200, flags => [bypass]}),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -136,11 +165,20 @@ kernel_queue_fanout(_Config) ->
     Rule = nft_rules:queue_rule(443, tcp, #{num => 300, flags => [fanout]}),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -160,7 +198,8 @@ kernel_queue_fanout(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

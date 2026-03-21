@@ -59,12 +59,20 @@ Corresponds to libnftnl src/expr/ct.c.
 
 %% --- Types ---
 
--type ct_key() :: state | direction | status | mark | expiration
-                | src | dst | protocol | proto_src | proto_dst
-                | non_neg_integer().
+-type ct_key() ::
+    state
+    | direction
+    | status
+    | mark
+    | expiration
+    | src
+    | dst
+    | protocol
+    | proto_src
+    | proto_dst
+    | non_neg_integer().
 
 -include("nft_constants.hrl").
-
 
 %% --- Public API ---
 
@@ -88,14 +96,14 @@ load(Key, Reg) when is_integer(Reg), Reg >= 0 ->
 %% --- Internal ---
 
 -spec key_val(ct_key()) -> non_neg_integer().
-key_val(state)     -> ?NFT_CT_STATE;
+key_val(state) -> ?NFT_CT_STATE;
 key_val(direction) -> ?NFT_CT_DIRECTION;
-key_val(status)    -> ?NFT_CT_STATUS;
-key_val(mark)      -> ?NFT_CT_MARK;
-key_val(expiration)-> ?NFT_CT_EXPIRATION;
-key_val(src)       -> ?NFT_CT_SRC;
-key_val(dst)       -> ?NFT_CT_DST;
-key_val(protocol)  -> ?NFT_CT_PROTOCOL;
+key_val(status) -> ?NFT_CT_STATUS;
+key_val(mark) -> ?NFT_CT_MARK;
+key_val(expiration) -> ?NFT_CT_EXPIRATION;
+key_val(src) -> ?NFT_CT_SRC;
+key_val(dst) -> ?NFT_CT_DST;
+key_val(protocol) -> ?NFT_CT_PROTOCOL;
 key_val(proto_src) -> ?NFT_CT_PROTO_SRC;
 key_val(proto_dst) -> ?NFT_CT_PROTO_DST;
 key_val(N) when is_integer(N), N >= 0 -> N.

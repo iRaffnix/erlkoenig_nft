@@ -62,15 +62,22 @@ Usage:
 
 %% --- Defaults ---
 
--define(DEFAULT_CONN_FLOOD, {50, 10}).     %% 50 conns in 10s
--define(DEFAULT_PORT_SCAN,  {20, 60}).     %% 20 ports in 60s
--define(DEFAULT_BAN_DURATION, 3600).       %% 1 hour
--define(DEFAULT_CLEANUP_INTERVAL, 30000).  %% 30 seconds
+%% 50 conns in 10s
+-define(DEFAULT_CONN_FLOOD, {50, 10}).
+%% 20 ports in 60s
+-define(DEFAULT_PORT_SCAN, {20, 60}).
+%% 1 hour
+-define(DEFAULT_BAN_DURATION, 3600).
+%% 30 seconds
+-define(DEFAULT_CLEANUP_INTERVAL, 30000).
 -define(DEFAULT_WHITELIST, []).
 
 %% ETS tables
--define(GUARD_CONNS, erlkoenig_nft_ct_guard_conns).  %% {SrcIP, Timestamp, DstPort}
--define(GUARD_BANS,  erlkoenig_nft_ct_guard_bans).   %% {SrcIP, BannedAt, ExpiresAt, Reason}
+
+%% {SrcIP, Timestamp, DstPort}
+-define(GUARD_CONNS, erlkoenig_nft_ct_guard_conns).
+%% {SrcIP, BannedAt, ExpiresAt, Reason}
+-define(GUARD_BANS, erlkoenig_nft_ct_guard_bans).
 
 %% --- Public API ---
 
@@ -102,6 +109,7 @@ reconfigure(Config) ->
 %% --- gen_server callbacks ---
 
 init(Config) ->
+    proc_lib:set_label(erlkoenig_nft_ct_guard),
     %% Parse config
     {FloodMax, FloodWindow} = maps:get(conn_flood, Config, ?DEFAULT_CONN_FLOOD),
     {ScanMax, ScanWindow} = maps:get(port_scan, Config, ?DEFAULT_PORT_SCAN),
@@ -122,31 +130,41 @@ init(Config) ->
     erlang:send_after(CleanupMs, self(), cleanup),
 
     State = #{
-        flood_max     => FloodMax,
-        flood_window  => FloodWindow,
-        scan_max      => ScanMax,
-        scan_window   => ScanWindow,
-        ban_duration  => BanDuration,
-        cleanup_ms    => CleanupMs,
-        whitelist     => Whitelist,
+        flood_max => FloodMax,
+        flood_window => FloodWindow,
+        scan_max => ScanMax,
+        scan_window => ScanWindow,
+        ban_duration => BanDuration,
+        cleanup_ms => CleanupMs,
+        whitelist => Whitelist,
         %% Stats
-        events_seen   => 0,
+        events_seen => 0,
         floods_detected => 0,
-        scans_detected  => 0,
-        bans_issued   => 0,
-        bans_expired  => 0
+        scans_detected => 0,
+        bans_issued => 0,
+        bans_expired => 0
     },
 
-    logger:notice("[ct_guard] Started: flood=~p/~ps, scan=~p/~ps, ban=~ps",
-                  [FloodMax, FloodWindow, ScanMax, ScanWindow, BanDuration]),
+    logger:notice(
+        "[ct_guard] Started: flood=~p/~ps, scan=~p/~ps, ban=~ps",
+        [FloodMax, FloodWindow, ScanMax, ScanWindow, BanDuration]
+    ),
 
     {ok, State}.
 
 handle_call(stats, _From, State) ->
-    #{events_seen := Seen, floods_detected := Floods,
-      scans_detected := Scans, bans_issued := Issued,
-      bans_expired := Expired, flood_max := FM, flood_window := FW,
-      scan_max := SM, scan_window := SW, ban_duration := BD} = State,
+    #{
+        events_seen := Seen,
+        floods_detected := Floods,
+        scans_detected := Scans,
+        bans_issued := Issued,
+        bans_expired := Expired,
+        flood_max := FM,
+        flood_window := FW,
+        scan_max := SM,
+        scan_window := SW,
+        ban_duration := BD
+    } = State,
     Stats = #{
         events_seen => Seen,
         floods_detected => Floods,
@@ -162,28 +180,40 @@ handle_call(stats, _From, State) ->
         }
     },
     {reply, Stats, State};
-
 handle_call(banned, _From, State) ->
     Now = erlang:system_time(second),
-    Bans = ets:foldl(fun({IP, BannedAt, ExpiresAt, Reason}, Acc) ->
-        Remaining = max(0, ExpiresAt - Now),
-        [#{ip => erlkoenig_nft_ip:format(IP),
-           ip_raw => IP,
-           reason => Reason,
-           banned_at => BannedAt,
-           expires_at => ExpiresAt,
-           remaining_seconds => Remaining} | Acc]
-    end, [], ?GUARD_BANS),
+    Bans = ets:foldl(
+        fun({IP, BannedAt, ExpiresAt, Reason}, Acc) ->
+            Remaining = max(0, ExpiresAt - Now),
+            [
+                #{
+                    ip => erlkoenig_nft_ip:format(IP),
+                    ip_raw => IP,
+                    reason => Reason,
+                    banned_at => BannedAt,
+                    expires_at => ExpiresAt,
+                    remaining_seconds => Remaining
+                }
+                | Acc
+            ]
+        end,
+        [],
+        ?GUARD_BANS
+    ),
     {reply, Bans, State};
-
 handle_call({reconfigure, Config}, _From, State) ->
-    {FloodMax, FloodWindow} = maps:get(conn_flood, Config, {maps:get(flood_max, State), maps:get(flood_window, State)}),
-    {ScanMax, ScanWindow} = maps:get(port_scan, Config, {maps:get(scan_max, State), maps:get(scan_window, State)}),
+    {FloodMax, FloodWindow} = maps:get(conn_flood, Config, {
+        maps:get(flood_max, State), maps:get(flood_window, State)
+    }),
+    {ScanMax, ScanWindow} = maps:get(port_scan, Config, {
+        maps:get(scan_max, State), maps:get(scan_window, State)
+    }),
     BanDuration = maps:get(ban_duration, Config, maps:get(ban_duration, State)),
-    Whitelist = case maps:find(whitelist, Config) of
-        {ok, WL} -> normalize_whitelist(WL);
-        error -> maps:get(whitelist, State)
-    end,
+    Whitelist =
+        case maps:find(whitelist, Config) of
+            {ok, WL} -> normalize_whitelist(WL);
+            error -> maps:get(whitelist, State)
+        end,
     State2 = State#{
         flood_max := FloodMax,
         flood_window := FloodWindow,
@@ -192,10 +222,11 @@ handle_call({reconfigure, Config}, _From, State) ->
         ban_duration := BanDuration,
         whitelist := Whitelist
     },
-    logger:notice("[ct_guard] Reconfigured: flood=~p/~ps, scan=~p/~ps, ban=~ps",
-                  [FloodMax, FloodWindow, ScanMax, ScanWindow, BanDuration]),
+    logger:notice(
+        "[ct_guard] Reconfigured: flood=~p/~ps, scan=~p/~ps, ban=~ps",
+        [FloodMax, FloodWindow, ScanMax, ScanWindow, BanDuration]
+    ),
     {reply, ok, State2};
-
 handle_call(_Req, _From, State) ->
     {reply, {error, unknown}, State}.
 
@@ -226,19 +257,15 @@ handle_info({ct_new, #{src := SrcIP} = Event}, State) ->
 
             {noreply, State4}
     end;
-
 handle_info({ct_destroy, _}, State) ->
     {noreply, State};
-
 handle_info({ct_alert, _}, State) ->
     {noreply, State};
-
 %% --- Cleanup timer ---
 handle_info(cleanup, #{cleanup_ms := Ms} = State) ->
     State2 = do_cleanup(State),
     erlang:send_after(Ms, self(), cleanup),
     {noreply, State2};
-
 %% --- Unban timer ---
 handle_info({unban, SrcIP}, #{bans_expired := Exp} = State) ->
     case ets:lookup(?GUARD_BANS, SrcIP) of
@@ -251,7 +278,6 @@ handle_info({unban, SrcIP}, #{bans_expired := Exp} = State) ->
         [] ->
             {noreply, State}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -293,8 +319,14 @@ check_port_scan(SrcIP, Now, #{scan_max := Max, scan_window := Window} = State) -
 %% Ban Management
 %% ===================================================================
 
-ban_ip(SrcIP, Reason, #{ban_duration := Duration,
-                         bans_issued := Issued} = State) ->
+ban_ip(
+    SrcIP,
+    Reason,
+    #{
+        ban_duration := Duration,
+        bans_issued := Issued
+    } = State
+) ->
     %% Check not already banned
     case is_banned(SrcIP) of
         true ->
@@ -313,22 +345,27 @@ ban_ip(SrcIP, Reason, #{ban_duration := Duration,
             erlang:send_after(Duration * 1000, self(), {unban, SrcIP}),
 
             %% Update stats
-            StatKey = case Reason of
-                conn_flood -> floods_detected;
-                port_scan -> scans_detected
-            end,
+            StatKey =
+                case Reason of
+                    conn_flood -> floods_detected;
+                    port_scan -> scans_detected
+                end,
             DetectCount = maps:get(StatKey, State, 0),
 
-            logger:warning("[ct_guard] BANNED ~s reason=~p duration=~ps",
-                          [erlkoenig_nft_ip:format(SrcIP), Reason, Duration]),
+            logger:warning(
+                "[ct_guard] BANNED ~s reason=~p duration=~ps",
+                [erlkoenig_nft_ip:format(SrcIP), Reason, Duration]
+            ),
 
             %% Broadcast alert
-            broadcast({ct_guard_ban, #{
-                ip => SrcIP,
-                reason => Reason,
-                duration => Duration,
-                expires_at => ExpiresAt
-            }}),
+            broadcast(
+                {ct_guard_ban, #{
+                    ip => SrcIP,
+                    reason => Reason,
+                    duration => Duration,
+                    expires_at => ExpiresAt
+                }}
+            ),
 
             State#{bans_issued := Issued + 1, StatKey := DetectCount + 1}
     end.
@@ -341,8 +378,10 @@ try_ban(SrcIP) ->
         erlkoenig_nft:ban(SrcIP)
     catch
         C:R ->
-            logger:error("[ct_guard] ban crashed for ~s: ~p:~p",
-                         [erlkoenig_nft_ip:format(SrcIP), C, R])
+            logger:error(
+                "[ct_guard] ban crashed for ~s: ~p:~p",
+                [erlkoenig_nft_ip:format(SrcIP), C, R]
+            )
     end.
 
 try_unban(SrcIP) ->
@@ -350,8 +389,10 @@ try_unban(SrcIP) ->
         erlkoenig_nft:unban(SrcIP)
     catch
         C:R ->
-            logger:error("[ct_guard] unban crashed for ~s: ~p:~p",
-                         [erlkoenig_nft_ip:format(SrcIP), C, R])
+            logger:error(
+                "[ct_guard] unban crashed for ~s: ~p:~p",
+                [erlkoenig_nft_ip:format(SrcIP), C, R]
+            )
     end.
 
 %% ===================================================================
@@ -366,33 +407,45 @@ count_events(SrcIP, Cutoff) ->
     EndKey = {SrcIP, infinity, 0},
     count_range(ets:next(?GUARD_CONNS, StartKey), SrcIP, EndKey, 0).
 
-count_range('$end_of_table', _, _, Count) -> Count;
+count_range('$end_of_table', _, _, Count) ->
+    Count;
 count_range({IP, _, _} = Key, SrcIP, EndKey, Count) when IP =:= SrcIP ->
     count_range(ets:next(?GUARD_CONNS, Key), SrcIP, EndKey, Count + 1);
-count_range(_, _, _, Count) -> Count.
+count_range(_, _, _, Count) ->
+    Count.
 
 %% Get distinct destination ports from SrcIP since Cutoff
 distinct_ports(SrcIP, Cutoff) ->
     StartKey = {SrcIP, Cutoff, 0},
     collect_ports(ets:next(?GUARD_CONNS, StartKey), SrcIP, sets:new()).
 
-collect_ports('$end_of_table', _, Ports) -> sets:to_list(Ports);
+collect_ports('$end_of_table', _, Ports) ->
+    sets:to_list(Ports);
 collect_ports({IP, _, _} = Key, SrcIP, Ports) when IP =:= SrcIP ->
     case ets:lookup(?GUARD_CONNS, Key) of
         [{_, DstPort}] ->
-            collect_ports(ets:next(?GUARD_CONNS, Key), SrcIP,
-                         sets:add_element(DstPort, Ports));
+            collect_ports(
+                ets:next(?GUARD_CONNS, Key),
+                SrcIP,
+                sets:add_element(DstPort, Ports)
+            );
         [] ->
             collect_ports(ets:next(?GUARD_CONNS, Key), SrcIP, Ports)
     end;
-collect_ports(_, _, Ports) -> sets:to_list(Ports).
+collect_ports(_, _, Ports) ->
+    sets:to_list(Ports).
 
 %% ===================================================================
 %% Cleanup
 %% ===================================================================
 
-do_cleanup(#{flood_window := FW, scan_window := SW,
-             bans_expired := Exp} = State) ->
+do_cleanup(
+    #{
+        flood_window := FW,
+        scan_window := SW,
+        bans_expired := Exp
+    } = State
+) ->
     Now = erlang:system_time(second),
 
     %% Remove connection events older than the largest window
@@ -405,44 +458,55 @@ do_cleanup(#{flood_window := FW, scan_window := SW,
 
     case ExpiredConns > 0 orelse ExpiredBans > 0 of
         true ->
-            logger:debug("[ct_guard] Cleanup: ~p events, ~p bans expired",
-                        [ExpiredConns, ExpiredBans]);
+            logger:debug(
+                "[ct_guard] Cleanup: ~p events, ~p bans expired",
+                [ExpiredConns, ExpiredBans]
+            );
         false ->
             ok
     end,
 
     State#{bans_expired := Exp + ExpiredBans}.
 
-delete_before('$end_of_table', _, Count) -> Count;
+delete_before('$end_of_table', _, Count) ->
+    Count;
 delete_before({_IP, Ts, _} = Key, Cutoff, Count) when Ts < Cutoff ->
     Next = ets:next(?GUARD_CONNS, Key),
     ets:delete(?GUARD_CONNS, Key),
     delete_before(Next, Cutoff, Count + 1);
-delete_before(_, _, Count) -> Count.
+delete_before(_, _, Count) ->
+    Count.
 
 cleanup_bans(Now) ->
-    ets:foldl(fun({IP, _, ExpiresAt, _}, Count) ->
-        case ExpiresAt =< Now of
-            true ->
-                ets:delete(?GUARD_BANS, IP),
-                _ = try_unban(IP),
-                Count + 1;
-            false ->
-                Count
-        end
-    end, 0, ?GUARD_BANS).
+    ets:foldl(
+        fun({IP, _, ExpiresAt, _}, Count) ->
+            case ExpiresAt =< Now of
+                true ->
+                    ets:delete(?GUARD_BANS, IP),
+                    _ = try_unban(IP),
+                    Count + 1;
+                false ->
+                    Count
+            end
+        end,
+        0,
+        ?GUARD_BANS
+    ).
 
 %% ===================================================================
 %% Whitelist
 %% ===================================================================
 
 normalize_whitelist(List) ->
-    lists:filtermap(fun(Entry) ->
-        case erlkoenig_nft_ip:normalize(Entry) of
-            {ok, Bin} -> {true, Bin};
-            {error, _} -> false
-        end
-    end, List).
+    lists:filtermap(
+        fun(Entry) ->
+            case erlkoenig_nft_ip:normalize(Entry) of
+                {ok, Bin} -> {true, Bin};
+                {error, _} -> false
+            end
+        end,
+        List
+    ).
 
 is_whitelisted(SrcIP, Whitelist) ->
     lists:member(SrcIP, Whitelist).

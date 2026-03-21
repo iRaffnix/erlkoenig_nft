@@ -5,41 +5,43 @@
 -compile(export_all).
 
 all() ->
-    [ct_established_has_bitwise,
-     tcp_accept_port_encoding,
-     udp_accept_port_encoding,
-     protocol_accept_icmp,
-     protocol_accept_numeric,
-     iif_accept_loopback,
-     full_firewall_msgs,
-     %% New rule helpers
-     forward_established_test,
-     iifname_accept_test,
-     tcp_port_range_accept_test,
-     tcp_reject_test,
-     udp_accept_limited_test,
-     udp_port_range_accept_test,
-     icmp_accept_test,
-     icmpv6_accept_test,
-     ip_saddr_accept_test,
-     ip_saddr_drop_test,
-     connlimit_drop_test,
-     log_reject_test,
-     masq_rule_test,
-     dnat_rule_test,
-     %% IPv6 tests
-     set_lookup_drop_ipv6_test,
-     ip_saddr_accept_ipv6_test,
-     ban_ip_ipv6_test,
-     dnat_rule_ipv6_test,
-     set_lookup_udp_accept_ipv4_test,
-     set_lookup_udp_accept_ipv6_test,
-     nflog_capture_udp_test,
-     iifname_jump_test,
-     oifname_accept_test,
-     oifname_neq_masq_test,
-     iifname_oifname_jump_test,
-     iifname_oifname_masq_test].
+    [
+        ct_established_has_bitwise,
+        tcp_accept_port_encoding,
+        udp_accept_port_encoding,
+        protocol_accept_icmp,
+        protocol_accept_numeric,
+        iif_accept_loopback,
+        full_firewall_msgs,
+        %% New rule helpers
+        forward_established_test,
+        iifname_accept_test,
+        tcp_port_range_accept_test,
+        tcp_reject_test,
+        udp_accept_limited_test,
+        udp_port_range_accept_test,
+        icmp_accept_test,
+        icmpv6_accept_test,
+        ip_saddr_accept_test,
+        ip_saddr_drop_test,
+        connlimit_drop_test,
+        log_reject_test,
+        masq_rule_test,
+        dnat_rule_test,
+        %% IPv6 tests
+        set_lookup_drop_ipv6_test,
+        ip_saddr_accept_ipv6_test,
+        ban_ip_ipv6_test,
+        dnat_rule_ipv6_test,
+        set_lookup_udp_accept_ipv4_test,
+        set_lookup_udp_accept_ipv6_test,
+        nflog_capture_udp_test,
+        iifname_jump_test,
+        oifname_accept_test,
+        oifname_neq_masq_test,
+        iifname_oifname_jump_test,
+        iifname_oifname_masq_test
+    ].
 
 ct_established_has_bitwise(_) ->
     Rule = nft_rules:ct_established_accept(),
@@ -102,10 +104,13 @@ full_firewall_msgs(_) ->
     ],
     Funs = [nft_encode:rule_fun(inet, T, I, R) || R <- Rules],
     Msgs = [F(N) || {F, N} <- lists:zip(Funs, lists:seq(1, length(Funs)))],
-    lists:foreach(fun(M) ->
-        ?assert(is_binary(M)),
-        ?assert(byte_size(M) > 20)
-    end, Msgs).
+    lists:foreach(
+        fun(M) ->
+            ?assert(is_binary(M)),
+            ?assert(byte_size(M) > 20)
+        end,
+        Msgs
+    ).
 
 %% ===================================================================
 %% New rule helper tests
@@ -145,8 +150,11 @@ tcp_reject_test(_) ->
     ?assertNotEqual(nomatch, binary:match(Msg, <<31, 144>>)).
 
 udp_accept_limited_test(_) ->
-    [DropRule, AcceptRule] = nft_rules:udp_accept_limited(53, <<"dns">>,
-        #{rate => 100, burst => 50}),
+    [DropRule, AcceptRule] = nft_rules:udp_accept_limited(
+        53,
+        <<"dns">>,
+        #{rate => 100, burst => 50}
+    ),
     %% Drop rule: meta, cmp, payload, cmp, limit, drop = 6
     ?assertEqual(6, length(DropRule)),
     %% Accept rule: meta, cmp, payload, cmp, objref, accept = 6

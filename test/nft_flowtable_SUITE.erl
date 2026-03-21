@@ -10,31 +10,36 @@
 -define(CHAIN, <<"forward">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        flowtable_msg_type,
-        flowtable_has_hook_nested,
-        flowtable_has_devices,
-        flowtable_has_flags,
-        flowtable_no_devices,
-        offload_ir_structure,
-        offload_ir_encode,
-        flow_offload_rule_structure
-     ]},
-     {kernel, [], [
-        kernel_create_flowtable,
-        kernel_flowtable_with_rule
-     ]}].
+    [
+        {unit, [parallel], [
+            flowtable_msg_type,
+            flowtable_has_hook_nested,
+            flowtable_has_devices,
+            flowtable_has_flags,
+            flowtable_no_devices,
+            offload_ir_structure,
+            offload_ir_encode,
+            flow_offload_rule_structure
+        ]},
+        {kernel, [], [
+            kernel_create_flowtable,
+            kernel_flowtable_with_rule
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
         "0\n" ->
             os:cmd("modprobe nf_flow_table 2>/dev/null"),
             Config;
-        _ -> {skip, "kernel tests require root"}
+        _ ->
+            {skip, "kernel tests require root"}
     end;
 init_per_group(_, Config) ->
     Config.
@@ -55,21 +60,33 @@ end_per_testcase(_TC, _Config) ->
 %% ===================================================================
 
 flowtable_msg_type(_) ->
-    Msg = nft_flowtable:add(?NFPROTO_INET, #{
-        table => <<"fw">>, name => <<"ft0">>,
-        hook => ingress, priority => 0,
-        devices => [<<"lo">>]
-    }, 100),
+    Msg = nft_flowtable:add(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => <<"ft0">>,
+            hook => ingress,
+            priority => 0,
+            devices => [<<"lo">>]
+        },
+        100
+    ),
     %% NFT_MSG_NEWFLOWTABLE = 0x16 = 22
     %% Type = (NFNL_SUBSYS_NFTABLES(10) bsl 8) bor 22 = 2582
     <<_Len:32/little, 2582:16/little, _/binary>> = Msg.
 
 flowtable_has_hook_nested(_) ->
-    Msg = nft_flowtable:add(?NFPROTO_INET, #{
-        table => <<"fw">>, name => <<"ft0">>,
-        hook => ingress, priority => 10,
-        devices => [<<"lo">>]
-    }, 1),
+    Msg = nft_flowtable:add(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => <<"ft0">>,
+            hook => ingress,
+            priority => 10,
+            devices => [<<"lo">>]
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_FLOWTABLE_HOOK(3) should be nested
@@ -82,11 +99,16 @@ flowtable_has_hook_nested(_) ->
     ?assertMatch({2, <<10:32/big>>}, lists:keyfind(2, 1, HookAttrs)).
 
 flowtable_has_devices(_) ->
-    Msg = nft_flowtable:add(?NFPROTO_INET, #{
-        table => <<"fw">>, name => <<"ft0">>,
-        hook => ingress,
-        devices => [<<"lo">>, <<"eth0">>]
-    }, 1),
+    Msg = nft_flowtable:add(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => <<"ft0">>,
+            hook => ingress,
+            devices => [<<"lo">>, <<"eth0">>]
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_FLOWTABLE_DEVS(4) should be nested
@@ -100,12 +122,18 @@ flowtable_has_devices(_) ->
     ?assertMatch(<<"eth0", 0>>, lists:nth(2, DevNames)).
 
 flowtable_has_flags(_) ->
-    Msg = nft_flowtable:add(?NFPROTO_INET, #{
-        table => <<"fw">>, name => <<"ft0">>,
-        hook => ingress,
-        devices => [<<"lo">>],
-        flags => 1  %% hardware offload
-    }, 1),
+    Msg = nft_flowtable:add(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => <<"ft0">>,
+            hook => ingress,
+            devices => [<<"lo">>],
+            %% hardware offload
+            flags => 1
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_FLOWTABLE_FLAGS(6) = 1
@@ -113,10 +141,15 @@ flowtable_has_flags(_) ->
 
 flowtable_no_devices(_) ->
     %% Flowtable with no devices should still encode successfully
-    Msg = nft_flowtable:add(?NFPROTO_INET, #{
-        table => <<"fw">>, name => <<"ft0">>,
-        hook => ingress
-    }, 1),
+    Msg = nft_flowtable:add(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => <<"ft0">>,
+            hook => ingress
+        },
+        1
+    ),
     <<_:20/binary, Attrs/binary>> = Msg,
     Decoded = nfnl_attr:decode(Attrs),
     %% NFTA_FLOWTABLE_DEVS(4) should not be present
@@ -152,11 +185,19 @@ kernel_create_flowtable(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_flowtable:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?FT_NAME,
-            hook => ingress, priority => 0,
-            devices => [<<"lo">>]
-        }, Seq) end
+        fun(Seq) ->
+            nft_flowtable:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?FT_NAME,
+                    hook => ingress,
+                    priority => 0,
+                    devices => [<<"lo">>]
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     %% Find the flowtable in the JSON output
@@ -173,16 +214,33 @@ kernel_flowtable_with_rule(_Config) ->
     OffloadRule = nft_rules:flow_offload(?FT_NAME),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_flowtable:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?FT_NAME,
-            hook => ingress, priority => 0,
-            devices => [<<"lo">>]
-        }, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => forward, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_flowtable:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?FT_NAME,
+                    hook => ingress,
+                    priority => 0,
+                    devices => [<<"lo">>]
+                },
+                Seq
+            )
+        end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => forward,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, OffloadRule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -198,10 +256,13 @@ kernel_flowtable_with_rule(_Config) ->
     %% Check that the rule contains a flow expression referencing our flowtable
     [Rule | _] = Rules,
     Exprs = maps:get(<<"expr">>, Rule, []),
-    HasFlow = lists:any(fun
-        (#{<<"flow">> := _}) -> true;
-        (_) -> false
-    end, Exprs),
+    HasFlow = lists:any(
+        fun
+            (#{<<"flow">> := _}) -> true;
+            (_) -> false
+        end,
+        Exprs
+    ),
     ?assert(HasFlow),
     nfnl_server:stop(Pid).
 
@@ -209,7 +270,8 @@ kernel_flowtable_with_rule(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

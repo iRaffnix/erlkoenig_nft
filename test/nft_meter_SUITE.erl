@@ -34,21 +34,25 @@ and verify with `nft -j` that the meter set and rule exist.
 -define(METER, <<"ssh_meter">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [
-        meter_ir_structure,
-        meter_ir_unit_conversion,
-        meter_encode_dynset,
-        meter_set_flags,
-        meter_rule_proto_match
-    ]},
-     {kernel, [], [
-        kernel_meter_set_exists,
-        kernel_meter_rule_references_set
-    ]}].
+    [
+        {unit, [parallel], [
+            meter_ir_structure,
+            meter_ir_unit_conversion,
+            meter_encode_dynset,
+            meter_set_flags,
+            meter_rule_proto_match
+        ]},
+        {kernel, [], [
+            kernel_meter_set_exists,
+            kernel_meter_rule_references_set
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -74,12 +78,24 @@ end_per_testcase(_TC, _Config) ->
 %% ===================================================================
 
 meter_ir_structure(_) ->
-    Rule = nft_rules:meter_limit(?METER, 22, tcp,
-        #{rate => 10, burst => 5, unit => second}),
+    Rule = nft_rules:meter_limit(
+        ?METER,
+        22,
+        tcp,
+        #{rate => 10, burst => 5, unit => second}
+    ),
     ?assert(is_list(Rule)),
     ?assert(length(Rule) >= 5),
     %% Contains a dynset expression
-    ?assert(lists:any(fun({dynset, _}) -> true; (_) -> false end, Rule)),
+    ?assert(
+        lists:any(
+            fun
+                ({dynset, _}) -> true;
+                (_) -> false
+            end,
+            Rule
+        )
+    ),
     %% Ends with drop
     ?assertMatch({immediate, #{verdict := drop}}, lists:last(Rule)).
 
@@ -101,26 +117,38 @@ meter_encode_dynset(_) ->
     ?assert(byte_size(Bin) > 0).
 
 meter_set_flags(_) ->
-    Msg = nft_set:add_meter(?NFPROTO_INET, #{
-        table => <<"fw">>,
-        name => ?METER,
-        type => ipv4_addr,
-        id => 1
-    }, 100),
+    Msg = nft_set:add_meter(
+        ?NFPROTO_INET,
+        #{
+            table => <<"fw">>,
+            name => ?METER,
+            type => ipv4_addr,
+            id => 1
+        },
+        100
+    ),
     ?assert(is_binary(Msg)),
     ?assert(byte_size(Msg) > 0).
 
 meter_rule_proto_match(_) ->
     %% TCP meter
-    TcpRule = nft_rules:meter_limit(<<"tcp_meter">>, 80, tcp,
-        #{rate => 100, burst => 50, unit => minute}),
+    TcpRule = nft_rules:meter_limit(
+        <<"tcp_meter">>,
+        80,
+        tcp,
+        #{rate => 100, burst => 50, unit => minute}
+    ),
     ?assertMatch({meta, #{key := l4proto}}, hd(TcpRule)),
     {cmp, #{data := ProtoData}} = lists:nth(2, TcpRule),
     ?assertEqual(<<6>>, ProtoData),
 
     %% UDP meter
-    UdpRule = nft_rules:meter_limit(<<"udp_meter">>, 53, udp,
-        #{rate => 50, burst => 10}),
+    UdpRule = nft_rules:meter_limit(
+        <<"udp_meter">>,
+        53,
+        udp,
+        #{rate => 50, burst => 10}
+    ),
     {cmp, #{data := UdpProtoData}} = lists:nth(2, UdpRule),
     ?assertEqual(<<17>>, UdpProtoData).
 
@@ -132,17 +160,32 @@ kernel_meter_set_exists(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
-        fun(Seq) -> nft_set:add_meter(?NFPROTO_INET, #{
-            table => ?TABLE,
-            name => ?METER,
-            type => ipv4_addr,
-            id => 1
-        }, Seq) end
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        fun(Seq) ->
+            nft_set:add_meter(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?METER,
+                    type => ipv4_addr,
+                    id => 1
+                },
+                Seq
+            )
+        end
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
     Sets = [S || #{<<"set">> := S} <- Items],
@@ -160,21 +203,40 @@ kernel_meter_set_exists(_Config) ->
 
 kernel_meter_rule_references_set(_Config) ->
     {ok, Pid} = nfnl_server:start_link(),
-    Rule = nft_rules:meter_limit(?METER, 22, tcp,
-        #{rate => 10, burst => 5, unit => second}),
+    Rule = nft_rules:meter_limit(
+        ?METER,
+        22,
+        tcp,
+        #{rate => 10, burst => 5, unit => second}
+    ),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_INET, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_INET, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => input, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
-        fun(Seq) -> nft_set:add_meter(?NFPROTO_INET, #{
-            table => ?TABLE,
-            name => ?METER,
-            type => ipv4_addr,
-            id => 1
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => input,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
+        fun(Seq) ->
+            nft_set:add_meter(
+                ?NFPROTO_INET,
+                #{
+                    table => ?TABLE,
+                    name => ?METER,
+                    type => ipv4_addr,
+                    id => 1
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(inet, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table inet " ++ binary_to_list(?TABLE)),
@@ -187,7 +249,8 @@ kernel_meter_rule_references_set(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

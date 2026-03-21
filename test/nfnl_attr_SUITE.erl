@@ -5,24 +5,26 @@
 -compile(export_all).
 
 all() ->
-    [encode_raw,
-     encode_str_null_terminated,
-     encode_u32_big_endian,
-     encode_u64_big_endian,
-     encode_nested_flag,
-     encode_padding,
-     decode_single,
-     decode_multiple,
-     decode_nested,
-     roundtrip_simple,
-     roundtrip_nested,
-     roundtrip_real_table].
+    [
+        encode_raw,
+        encode_str_null_terminated,
+        encode_u32_big_endian,
+        encode_u64_big_endian,
+        encode_nested_flag,
+        encode_padding,
+        decode_single,
+        decode_multiple,
+        decode_nested,
+        roundtrip_simple,
+        roundtrip_nested,
+        roundtrip_real_table
+    ].
 
 %% --- Encoding ---
 
 encode_raw(_) ->
     %% Type=1, Data = <<1,2,3>>  → Len=7, padded to 8
-    Bin = nfnl_attr:encode(1, <<1,2,3>>),
+    Bin = nfnl_attr:encode(1, <<1, 2, 3>>),
     <<7:16/little, 1:16/little, 1, 2, 3, 0>> = Bin.
 
 encode_str_null_terminated(_) ->

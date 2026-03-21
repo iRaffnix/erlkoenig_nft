@@ -8,15 +8,28 @@
 -define(TABLE, <<"erltest_tbl">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [add_inet_table, add_ipv4_table, table_attrs_decodable,
-                         owner_table_flag, default_table_no_owner]},
-     {kernel, [], [kernel_create_inet_table, kernel_create_ipv4_table,
-                   kernel_table_idempotent, kernel_owner_table,
-                   kernel_owner_table_removed_on_exit]}].
+    [
+        {unit, [parallel], [
+            add_inet_table,
+            add_ipv4_table,
+            table_attrs_decodable,
+            owner_table_flag,
+            default_table_no_owner
+        ]},
+        {kernel, [], [
+            kernel_create_inet_table,
+            kernel_create_ipv4_table,
+            kernel_table_idempotent,
+            kernel_owner_table,
+            kernel_owner_table_removed_on_exit
+        ]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -44,13 +57,13 @@ end_per_testcase(_TC, _Config) ->
 add_inet_table(_) ->
     Msg = nft_table:add(1, <<"test">>, 100),
     %% Should be a valid nlmsg with type NEWTABLE
-    <<_Len:32/little, 2560:16/little, _Flags:16/little,
-      100:32/little, _:32, _/binary>> = Msg.
+    <<_Len:32/little, 2560:16/little, _Flags:16/little, 100:32/little, _:32, _/binary>> = Msg.
 
 add_ipv4_table(_) ->
     Msg = nft_table:add(2, <<"fw">>, 1),
     <<_:32, 2560:16/little, _:16, 1:32/little, _:32,
-      2:8, _/binary>> = Msg.  %% Family=2 in nfgenmsg
+        %% Family=2 in nfgenmsg
+        2:8, _/binary>> = Msg.
 
 table_attrs_decodable(_) ->
     Msg = nft_table:add(1, <<"mytable">>, 50),
@@ -117,10 +130,13 @@ kernel_owner_table(_Config) ->
             Output = os:cmd("nft list tables 2>/dev/null"),
             ?assert(string:find(Output, binary_to_list(?TABLE)) =/= nomatch);
         _ ->
-            Found = lists:any(fun
-                (#{<<"table">> := #{<<"name">> := N}}) -> N =:= ?TABLE;
-                (_) -> false
-            end, Items),
+            Found = lists:any(
+                fun
+                    (#{<<"table">> := #{<<"name">> := N}}) -> N =:= ?TABLE;
+                    (_) -> false
+                end,
+                Items
+            ),
             ?assert(Found)
     end,
     nfnl_server:stop(Pid).
@@ -135,17 +151,21 @@ kernel_owner_table_removed_on_exit(_Config) ->
     timer:sleep(100),
     %% Owner table should be auto-removed by the kernel
     Items = nft_json("list tables"),
-    Found = lists:any(fun
-        (#{<<"table">> := #{<<"name">> := N}}) -> N =:= ?TABLE;
-        (_) -> false
-    end, Items),
+    Found = lists:any(
+        fun
+            (#{<<"table">> := #{<<"name">> := N}}) -> N =:= ?TABLE;
+            (_) -> false
+        end,
+        Items
+    ),
     ?assertNot(Found).
 
 %% --- Helpers ---
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} ->
@@ -153,8 +173,10 @@ nft_json(Cmd) ->
                 _ ->
                     %% nft < 1.0.6 may produce truncated/malformed JSON
                     %% (e.g. owner table flags field), skip gracefully
-                    ct:log("nft JSON parse failed for '~s' (nft version may be too old), output: ~s",
-                           [Cmd, Output]),
+                    ct:log(
+                        "nft JSON parse failed for '~s' (nft version may be too old), output: ~s",
+                        [Cmd, Output]
+                    ),
                     []
             end
     end.

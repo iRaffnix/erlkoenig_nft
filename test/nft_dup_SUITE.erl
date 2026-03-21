@@ -32,14 +32,23 @@ that dup expressions are accepted by the kernel via nft -j.
 -define(CHAIN, <<"prerouting">>).
 
 all() ->
-    [{group, unit},
-     {group, kernel}].
+    [
+        {group, unit},
+        {group, kernel}
+    ].
 
 groups() ->
-    [{unit, [parallel], [dup_ir_term, dup_encode_binary, dup_rule_tcp,
-                         dup_rule_udp, dup_chain_continues,
-                         dup_chain_wrong_port_skips]},
-     {kernel, [], [kernel_dup_rule_accepted, kernel_dup_expr_in_json]}].
+    [
+        {unit, [parallel], [
+            dup_ir_term,
+            dup_encode_binary,
+            dup_rule_tcp,
+            dup_rule_udp,
+            dup_chain_continues,
+            dup_chain_wrong_port_skips
+        ]},
+        {kernel, [], [kernel_dup_rule_accepted, kernel_dup_expr_in_json]}
+    ].
 
 init_per_group(kernel, Config) ->
     case os:cmd("id -u") of
@@ -49,7 +58,8 @@ init_per_group(kernel, Config) ->
                 [] -> Config;
                 _ -> {skip, "nft_dup kernel module not available"}
             end;
-        _ -> {skip, "kernel tests require root"}
+        _ ->
+            {skip, "kernel tests require root"}
     end;
 init_per_group(_, Config) ->
     Config.
@@ -86,7 +96,7 @@ dup_encode_binary(_) ->
 
 dup_rule_tcp(_) ->
     %% dup_to/4 for TCP returns a valid rule list
-    Rule = nft_rules:dup_to(<<10,0,0,2>>, 3, 443, tcp),
+    Rule = nft_rules:dup_to(<<10, 0, 0, 2>>, 3, 443, tcp),
     ?assert(is_list(Rule)),
     ?assertEqual(7, length(Rule)),
     %% Last expr should be {dup, _}
@@ -94,23 +104,23 @@ dup_rule_tcp(_) ->
 
 dup_rule_udp(_) ->
     %% dup_to/4 for UDP returns a valid rule list
-    Rule = nft_rules:dup_to(<<10,0,0,2>>, 3, 53, udp),
+    Rule = nft_rules:dup_to(<<10, 0, 0, 2>>, 3, 53, udp),
     ?assert(is_list(Rule)),
     ?assertEqual(7, length(Rule)),
     ?assertMatch({dup, _}, lists:last(Rule)).
 
 dup_chain_continues(_) ->
     %% Dup is a side-effect: the chain continues after the dup rule
-    DupRule = nft_rules:dup_to(<<10,0,0,2>>, 3, 443, tcp),
+    DupRule = nft_rules:dup_to(<<10, 0, 0, 2>>, 3, 443, tcp),
     AcceptRule = [nft_expr_ir:accept()],
-    Pkt = nft_vm_pkt:tcp(#{saddr => {192,168,1,1}}, #{dport => 443}),
+    Pkt = nft_vm_pkt:tcp(#{saddr => {192, 168, 1, 1}}, #{dport => 443}),
     {accept, _} = nft_vm:eval_chain([DupRule, AcceptRule], Pkt).
 
 dup_chain_wrong_port_skips(_) ->
     %% When port doesn't match, dup rule BREAKs and next rule fires
-    DupRule = nft_rules:dup_to(<<10,0,0,2>>, 3, 443, tcp),
+    DupRule = nft_rules:dup_to(<<10, 0, 0, 2>>, 3, 443, tcp),
     AcceptRule = [nft_expr_ir:accept()],
-    Pkt = nft_vm_pkt:tcp(#{saddr => {192,168,1,1}}, #{dport => 80}),
+    Pkt = nft_vm_pkt:tcp(#{saddr => {192, 168, 1, 1}}, #{dport => 80}),
     %% Port 80 doesn't match dup_to for 443, so dup BREAKs
     %% Falls through to accept rule
     {accept, _} = nft_vm:eval_chain([DupRule, AcceptRule], Pkt).
@@ -123,14 +133,23 @@ kernel_dup_rule_accepted(_Config) ->
     %% Verify the kernel accepts a rule containing a dup expression.
     %% dup expression is only registered for ip/ip6 families, not inet.
     {ok, Pid} = nfnl_server:start_link(),
-    Rule = nft_rules:dup_to(<<10,0,0,2>>, 3, 443, tcp),
+    Rule = nft_rules:dup_to(<<10, 0, 0, 2>>, 3, 443, tcp),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_IPV4, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_IPV4, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => prerouting, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_IPV4,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => prerouting,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(ip, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table ip " ++ binary_to_list(?TABLE)),
@@ -142,14 +161,23 @@ kernel_dup_expr_in_json(_Config) ->
     %% Verify the dup expression appears in nft -j output.
     %% dup expression is only registered for ip/ip6 families, not inet.
     {ok, Pid} = nfnl_server:start_link(),
-    Rule = nft_rules:dup_to(<<10,0,0,2>>, 3, 443, tcp),
+    Rule = nft_rules:dup_to(<<10, 0, 0, 2>>, 3, 443, tcp),
     ok = nfnl_server:apply_msgs(Pid, [
         fun(Seq) -> nft_table:add(?NFPROTO_IPV4, ?TABLE, Seq) end,
-        fun(Seq) -> nft_chain:add(?NFPROTO_IPV4, #{
-            table => ?TABLE, name => ?CHAIN,
-            hook => prerouting, type => filter,
-            priority => 0, policy => accept
-        }, Seq) end,
+        fun(Seq) ->
+            nft_chain:add(
+                ?NFPROTO_IPV4,
+                #{
+                    table => ?TABLE,
+                    name => ?CHAIN,
+                    hook => prerouting,
+                    type => filter,
+                    priority => 0,
+                    policy => accept
+                },
+                Seq
+            )
+        end,
         nft_encode:rule_fun(ip, ?TABLE, ?CHAIN, Rule)
     ]),
     Items = nft_json("list table ip " ++ binary_to_list(?TABLE)),
@@ -165,7 +193,8 @@ kernel_dup_expr_in_json(_Config) ->
 
 nft_json(Cmd) ->
     case os:cmd("nft -j " ++ Cmd ++ " 2>/dev/null") of
-        [] -> [];
+        [] ->
+            [];
         Output ->
             case catch json:decode(list_to_binary(Output)) of
                 #{<<"nftables">> := Items} -> Items;

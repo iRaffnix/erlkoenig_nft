@@ -42,14 +42,16 @@ cmp values must also be big-endian.
 Corresponds to libnftnl src/expr/payload.c.
 """.
 
--export([load/4,
-         tcp_sport/1,
-         tcp_dport/1,
-         udp_sport/1,
-         udp_dport/1,
-         ip_saddr/1,
-         ip_daddr/1,
-         ip_protocol/1]).
+-export([
+    load/4,
+    tcp_sport/1,
+    tcp_dport/1,
+    udp_sport/1,
+    udp_dport/1,
+    ip_saddr/1,
+    ip_daddr/1,
+    ip_protocol/1
+]).
 
 -export_type([base/0]).
 
@@ -60,7 +62,6 @@ Corresponds to libnftnl src/expr/payload.c.
 %% bases not yet given an atom alias (e.g. inner=3, tunnel=4).
 
 -include("nft_constants.hrl").
-
 
 %% --- Public API ---
 
@@ -74,10 +75,14 @@ Example:
     nft_expr_payload:load(transport, 2, 2, 1)
 """.
 -spec load(base(), non_neg_integer(), pos_integer(), non_neg_integer()) -> binary().
-load(Base, Offset, Len, Reg)
-  when is_integer(Offset), Offset >= 0,
-       is_integer(Len), Len > 0,
-       is_integer(Reg), Reg >= 0 ->
+load(Base, Offset, Len, Reg) when
+    is_integer(Offset),
+    Offset >= 0,
+    is_integer(Len),
+    Len > 0,
+    is_integer(Reg),
+    Reg >= 0
+->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_u32(?NFTA_PAYLOAD_DREG, Reg),
         nfnl_attr:encode_u32(?NFTA_PAYLOAD_BASE, base_val(Base)),
@@ -119,7 +124,7 @@ ip_protocol(Reg) -> load(network, 9, 1, Reg).
 %% --- Internal ---
 
 -spec base_val(base()) -> non_neg_integer().
-base_val(link)      -> ?NFT_PAYLOAD_LL_HEADER;
-base_val(network)   -> ?NFT_PAYLOAD_NETWORK_HEADER;
+base_val(link) -> ?NFT_PAYLOAD_LL_HEADER;
+base_val(network) -> ?NFT_PAYLOAD_NETWORK_HEADER;
 base_val(transport) -> ?NFT_PAYLOAD_TRANSPORT_HEADER;
 base_val(N) when is_integer(N), N >= 0 -> N.

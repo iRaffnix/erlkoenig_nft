@@ -43,7 +43,8 @@ Commands: status, ban, unban, reload, apply, counters, guard_stats, guard_banned
 -export([init/1, handle_info/2, handle_cast/2, handle_call/3, terminate/2]).
 
 -define(DEFAULT_SOCKET, "/run/erlkoenig_nft/api.sock").
--define(MAX_BUF_SIZE, 1048576). %% 1 MB max request size
+%% 1 MB max request size
+-define(MAX_BUF_SIZE, 1048576).
 
 %% --- Public API ---
 
@@ -55,6 +56,7 @@ start_link() ->
 %% --- gen_server callbacks ---
 
 init([]) ->
+    proc_lib:set_label(erlkoenig_nft_api),
     Path = socket_path(),
     _ = file:delete(Path),
     case listen(Path) of
@@ -90,20 +92,19 @@ handle_info({'$socket', LSock, select, _Ref}, #{listen := LSock} = State) ->
             {select, _} = socket:accept(LSock, nowait),
             {noreply, State}
     end;
-
 %% Handler process exited
 handle_info({'DOWN', _Mon, process, Pid, _Reason}, State) ->
     Handlers = maps:remove(Pid, maps:get(handlers, State)),
     {noreply, State#{handlers := Handlers}};
-
 handle_info(_Msg, State) ->
     {noreply, State}.
 
 terminate(_Reason, #{listen := LSock, path := Path}) ->
-    _ = case LSock of
-        undefined -> ok;
-        _ -> socket:close(LSock)
-    end,
+    _ =
+        case LSock of
+            undefined -> ok;
+            _ -> socket:close(LSock)
+        end,
     _ = file:delete(Path),
     ok;
 terminate(_Reason, _State) ->
@@ -127,12 +128,15 @@ set_socket_group(Path) ->
     end.
 
 valid_group_name(Name) ->
-    lists:all(fun(C) ->
-        (C >= $a andalso C =< $z) orelse
-        (C >= $A andalso C =< $Z) orelse
-        (C >= $0 andalso C =< $9) orelse
-        C =:= $_ orelse C =:= $-
-    end, Name) andalso length(Name) > 0 andalso length(Name) =< 32.
+    lists:all(
+        fun(C) ->
+            (C >= $a andalso C =< $z) orelse
+                (C >= $A andalso C =< $Z) orelse
+                (C >= $0 andalso C =< $9) orelse
+                C =:= $_ orelse C =:= $-
+        end,
+        Name
+    ) andalso length(Name) > 0 andalso length(Name) =< 32.
 
 group_gid(Name) ->
     %% Read /etc/group to resolve group name → gid
@@ -145,12 +149,16 @@ group_gid(Name) ->
             error
     end.
 
-find_gid(_Name, []) -> error;
+find_gid(_Name, []) ->
+    error;
 find_gid(Name, [Line | Rest]) ->
     case binary:split(Line, <<":">>, [global]) of
         [Name, _, GidBin | _] ->
-            try {ok, binary_to_integer(GidBin)}
-            catch _:_ -> error end;
+            try
+                {ok, binary_to_integer(GidBin)}
+            catch
+                _:_ -> error
+            end;
         _ ->
             find_gid(Name, Rest)
     end.
@@ -161,7 +169,8 @@ listen(Path) ->
             case socket:bind(Sock, #{family => local, path => Path}) of
                 ok ->
                     case socket:listen(Sock) of
-                        ok -> {ok, Sock};
+                        ok ->
+                            {ok, Sock};
                         Err ->
                             _ = socket:close(Sock),
                             Err
@@ -207,8 +216,11 @@ client_loop(Sock, Buf) ->
                 Response ->
                     RespBin = [json:encode(Response), <<"\n">>],
                     case socket:send(Sock, RespBin) of
-                        ok -> client_loop(Sock, Rest);
-                        {error, _} -> _ = socket:close(Sock), ok
+                        ok ->
+                            client_loop(Sock, Rest);
+                        {error, _} ->
+                            _ = socket:close(Sock),
+                            ok
                     end
             end;
         nomatch ->
@@ -235,8 +247,10 @@ process_request(Line) ->
 stream_monitor(Sock, Interval) ->
     Rates = erlkoenig_nft:rates(),
     Counters = erlkoenig_nft:list_counters(),
-    Data = #{<<"counters">> => term_to_json(Counters),
-             <<"rates">> => term_to_json(Rates)},
+    Data = #{
+        <<"counters">> => term_to_json(Counters),
+        <<"rates">> => term_to_json(Rates)
+    },
     Msg = [json:encode(#{<<"ok">> => true, <<"data">> => Data}), <<"\n">>],
     case socket:send(Sock, Msg) of
         ok ->
@@ -252,42 +266,42 @@ dispatch(#{<<"cmd">> := <<"status">>}) ->
     try
         Data = erlkoenig_nft:status(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API status error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API status error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"ban">>, <<"ip">> := IP}) ->
     try
         ok = erlkoenig_nft:ban(binary_to_list(IP)),
         #{<<"ok">> => true, <<"data">> => #{<<"banned">> => IP}}
-    catch _:E ->
-        logger:warning("API ban error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"ban failed">>}
+    catch
+        _:E ->
+            logger:warning("API ban error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"ban failed">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"unban">>, <<"ip">> := IP}) ->
     try
         case erlkoenig_nft:unban(binary_to_list(IP)) of
             ok -> #{<<"ok">> => true, <<"data">> => #{<<"unbanned">> => IP}};
             {error, _R} -> #{<<"ok">> => false, <<"error">> => <<"unban failed">>}
         end
-    catch _:E ->
-        logger:warning("API unban error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"unban failed">>}
+    catch
+        _:E ->
+            logger:warning("API unban error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"unban failed">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"reload">>}) ->
     try
         case erlkoenig_nft:reload() of
             ok -> #{<<"ok">> => true};
             {error, _R} -> #{<<"ok">> => false, <<"error">> => <<"reload failed">>}
         end
-    catch _:E ->
-        logger:warning("API reload error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"reload failed">>}
+    catch
+        _:E ->
+            logger:warning("API reload error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"reload failed">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"apply">>, <<"term">> := TermStr}) ->
     try
         %% Validate the term parses before writing
@@ -300,9 +314,13 @@ dispatch(#{<<"cmd">> := <<"apply">>, <<"term">> := TermStr}) ->
                         case file:rename(TmpPath, ConfigPath) of
                             ok ->
                                 case erlkoenig_nft:reload() of
-                                    ok -> #{<<"ok">> => true};
+                                    ok ->
+                                        #{<<"ok">> => true};
                                     {error, _R} ->
-                                        #{<<"ok">> => false, <<"error">> => <<"reload failed after apply">>}
+                                        #{
+                                            <<"ok">> => false,
+                                            <<"error">> => <<"reload failed after apply">>
+                                        }
                                 end;
                             {error, RenameErr} ->
                                 _ = file:delete(TmpPath),
@@ -316,177 +334,196 @@ dispatch(#{<<"cmd">> := <<"apply">>, <<"term">> := TermStr}) ->
             {error, Reason} ->
                 #{<<"ok">> => false, <<"error">> => Reason}
         end
-    catch _:E ->
-        logger:warning("API apply error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"apply failed">>}
+    catch
+        _:E ->
+            logger:warning("API apply error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"apply failed">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"counters">>}) ->
     try
         Rates = erlkoenig_nft:rates(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Rates)}
-    catch _:E ->
-        logger:warning("API counters error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API counters error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"guard_stats">>}) ->
     try
         Stats = erlkoenig_nft:guard_stats(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Stats)}
-    catch _:E ->
-        logger:warning("API guard_stats error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API guard_stats error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"guard_banned">>}) ->
     try
         Banned = erlkoenig_nft:guard_banned(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Banned)}
-    catch _:E ->
-        logger:warning("API guard_banned error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API guard_banned error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
-dispatch(#{<<"cmd">> := <<"monitor">>, <<"interval">> := Interval})
-  when is_integer(Interval), Interval >= 500 ->
+dispatch(#{<<"cmd">> := <<"monitor">>, <<"interval">> := Interval}) when
+    is_integer(Interval), Interval >= 500
+->
     %% Handled specially — returns a stream marker
     {stream, monitor, Interval};
 dispatch(#{<<"cmd">> := <<"monitor">>}) ->
     {stream, monitor, 2000};
-
 dispatch(#{<<"cmd">> := <<"list_ruleset">>}) ->
     try
         Status = erlkoenig_nft:status(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Status)}
-    catch _:E ->
-        logger:warning("API list_ruleset error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API list_ruleset error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"list_chains">>}) ->
     try
         Data = erlkoenig_nft:list_chains(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API list_chains error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API list_chains error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"list_sets">>}) ->
     try
         Data = erlkoenig_nft:list_sets(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API list_sets error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API list_sets error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"list_set">>, <<"name">> := Name}) ->
     try
         case erlkoenig_nft:list_set(Name) of
             {ok, Data} ->
                 #{<<"ok">> => true, <<"data">> => term_to_json(Data)};
             {error, Reason} ->
-                #{<<"ok">> => false, <<"error">> => iolist_to_binary(
-                    io_lib:format("~p", [Reason]))}
+                #{
+                    <<"ok">> => false,
+                    <<"error">> => iolist_to_binary(
+                        io_lib:format("~p", [Reason])
+                    )
+                }
         end
-    catch _:E ->
-        logger:warning("API list_set error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API list_set error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"list_counters">>}) ->
     try
         Data = erlkoenig_nft:list_counters(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API list_counters error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API list_counters error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"add_element">>, <<"set">> := Set, <<"value">> := Value}) ->
     try
         case erlkoenig_nft:add_element(Set, Value) of
-            ok -> #{<<"ok">> => true};
+            ok ->
+                #{<<"ok">> => true};
             {error, Reason} ->
-                #{<<"ok">> => false, <<"error">> => iolist_to_binary(
-                    io_lib:format("~p", [Reason]))}
+                #{
+                    <<"ok">> => false,
+                    <<"error">> => iolist_to_binary(
+                        io_lib:format("~p", [Reason])
+                    )
+                }
         end
-    catch _:E ->
-        logger:warning("API add_element error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"add element failed">>}
+    catch
+        _:E ->
+            logger:warning("API add_element error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"add element failed">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"top">>, <<"n">> := N}) when is_integer(N), N > 0 ->
     try
         Sources = erlkoenig_nft:ct_top(N),
         TotalConns = erlkoenig_nft:ct_count(),
         Mode = erlkoenig_nft:ct_mode(),
-        Data = #{<<"sources">> => term_to_json(Sources),
-                 <<"total">> => TotalConns,
-                 <<"mode">> => atom_to_binary(Mode)},
+        Data = #{
+            <<"sources">> => term_to_json(Sources),
+            <<"total">> => TotalConns,
+            <<"mode">> => atom_to_binary(Mode)
+        },
         #{<<"ok">> => true, <<"data">> => Data}
-    catch _:E ->
-        logger:warning("API top error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API top error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
 dispatch(#{<<"cmd">> := <<"top">>}) ->
     try
         Sources = erlkoenig_nft:ct_top(10),
         TotalConns = erlkoenig_nft:ct_count(),
         Mode = erlkoenig_nft:ct_mode(),
-        Data = #{<<"sources">> => term_to_json(Sources),
-                 <<"total">> => TotalConns,
-                 <<"mode">> => atom_to_binary(Mode)},
+        Data = #{
+            <<"sources">> => term_to_json(Sources),
+            <<"total">> => TotalConns,
+            <<"mode">> => atom_to_binary(Mode)
+        },
         #{<<"ok">> => true, <<"data">> => Data}
-    catch _:E ->
-        logger:warning("API top error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API top error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"audit_log">>, <<"n">> := N}) when is_integer(N), N > 0 ->
     try
         Data = erlkoenig_nft:audit_log(N),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API audit_log error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API audit_log error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
 dispatch(#{<<"cmd">> := <<"audit_log">>}) ->
     try
         Data = erlkoenig_nft:audit_log(100),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API audit_log error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API audit_log error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"diff_live">>}) ->
     try
         Data = erlkoenig_nft:diff_live(),
         #{<<"ok">> => true, <<"data">> => term_to_json(Data)}
-    catch _:E ->
-        logger:warning("API diff_live error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"internal error">>}
+    catch
+        _:E ->
+            logger:warning("API diff_live error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"internal error">>}
     end;
-
 dispatch(#{<<"cmd">> := <<"del_element">>, <<"set">> := Set, <<"value">> := Value}) ->
     try
         case erlkoenig_nft:del_element(Set, Value) of
-            ok -> #{<<"ok">> => true};
+            ok ->
+                #{<<"ok">> => true};
             {error, Reason} ->
-                #{<<"ok">> => false, <<"error">> => iolist_to_binary(
-                    io_lib:format("~p", [Reason]))}
+                #{
+                    <<"ok">> => false,
+                    <<"error">> => iolist_to_binary(
+                        io_lib:format("~p", [Reason])
+                    )
+                }
         end
-    catch _:E ->
-        logger:warning("API del_element error: ~p", [E]),
-        #{<<"ok">> => false, <<"error">> => <<"delete element failed">>}
+    catch
+        _:E ->
+            logger:warning("API del_element error: ~p", [E]),
+            #{<<"ok">> => false, <<"error">> => <<"delete element failed">>}
     end;
-
 dispatch(#{<<"cmd">> := _}) ->
     #{<<"ok">> => false, <<"error">> => <<"unknown command">>};
-
 dispatch(_) ->
     #{<<"ok">> => false, <<"error">> => <<"missing cmd field">>}.
 
@@ -547,9 +584,13 @@ drop_until_dot([_ | Rest]) -> drop_until_dot(Rest).
 %% --- Internal: Term → JSON-safe conversion ---
 
 term_to_json(T) when is_map(T) ->
-    maps:fold(fun(K, V, Acc) ->
-        maps:put(term_to_json_key(K), term_to_json(V), Acc)
-    end, #{}, T);
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(term_to_json_key(K), term_to_json(V), Acc)
+        end,
+        #{},
+        T
+    );
 term_to_json(T) when is_list(T) ->
     [term_to_json(E) || E <- T];
 term_to_json(T) when is_tuple(T) ->

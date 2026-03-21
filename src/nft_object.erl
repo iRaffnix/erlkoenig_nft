@@ -36,11 +36,13 @@ Usage:
     nft_object:get_counter_reset(Sock, 1, <<"fw">>, <<"ssh_pkts">>)
 """.
 
--export([add_counter/4,
-         delete/4,
-         get_counter/4,
-         get_counter_reset/4,
-         get_all_counters/3]).
+-export([
+    add_counter/4,
+    delete/4,
+    get_counter/4,
+    get_counter_reset/4,
+    get_all_counters/3
+]).
 
 -include("nft_constants.hrl").
 
@@ -88,7 +90,8 @@ Read a named counter's current values without resetting.
 Returns {ok, #{packets => N, bytes => N}} or {error, Reason}.
 """.
 -spec get_counter(socket:socket(), 0..255, binary(), binary()) ->
-    {ok, map()} | {error, term()}.
+    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}}
+    | {error, atom()}.
 get_counter(Sock, Family, Table, Name) ->
     query_counter(Sock, ?NFT_MSG_GETOBJ, Family, Table, Name).
 
@@ -99,7 +102,8 @@ This is the ideal primitive for rate calculation: you get the
 exact count since the last reset, with no race conditions.
 """.
 -spec get_counter_reset(socket:socket(), 0..255, binary(), binary()) ->
-    {ok, map()} | {error, term()}.
+    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}}
+    | {error, atom()}.
 get_counter_reset(Sock, Family, Table, Name) ->
     query_counter(Sock, ?NFT_MSG_GETOBJ_RESET, Family, Table, Name).
 
@@ -109,22 +113,30 @@ Get all named counters in a table.
 Returns {ok, [#{name => Name, packets => N, bytes => N}]}.
 """.
 -spec get_all_counters(socket:socket(), 0..255, binary()) ->
-    {ok, [map()]} | {error, term()}.
+    {ok, [map()]} | {error, atom()}.
 get_all_counters(Sock, Family, Table) ->
     FilterAttrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_OBJ_TABLE, Table),
         nfnl_attr:encode_u32(?NFTA_OBJ_TYPE, ?NFT_OBJECT_COUNTER)
     ]),
-    Msg = nfnl_msg:build_hdr(?NFT_MSG_GETOBJ, Family,
-        ?NLM_F_REQUEST bor ?NLM_F_DUMP, seq(), FilterAttrs),
+    Msg = nfnl_msg:build_hdr(
+        ?NFT_MSG_GETOBJ,
+        Family,
+        ?NLM_F_REQUEST bor ?NLM_F_DUMP,
+        seq(),
+        FilterAttrs
+    ),
     case send_and_collect(Sock, Msg) of
         {ok, Responses} ->
-            Counters = lists:filtermap(fun(Attrs) ->
-                case parse_counter_response(Attrs) of
-                    #{name := _} = C -> {true, C};
-                    _ -> false
-                end
-            end, [A || A <- Responses, table_matches(A, Table)]),
+            Counters = lists:filtermap(
+                fun(Attrs) ->
+                    case parse_counter_response(Attrs) of
+                        #{name := _} = C -> {true, C};
+                        _ -> false
+                    end
+                end,
+                [A || A <- Responses, table_matches(A, Table)]
+            ),
             {ok, Counters};
         {error, _} = Err ->
             Err
@@ -132,36 +144,40 @@ get_all_counters(Sock, Family, Table) ->
 
 %% --- Internal ---
 -spec query_counter(socket:socket(), 0..255, 0..255, binary(), binary()) ->
-    {ok, map()} | {error, term()}.
+    {ok, map()} | {error, atom()}.
 query_counter(Sock, MsgType, Family, Table, Name) ->
     Attrs = iolist_to_binary([
         nfnl_attr:encode_str(?NFTA_OBJ_TABLE, Table),
         nfnl_attr:encode_str(?NFTA_OBJ_NAME, Name),
         nfnl_attr:encode_u32(?NFTA_OBJ_TYPE, ?NFT_OBJECT_COUNTER)
     ]),
-    Msg = nfnl_msg:build_hdr(MsgType, Family,
-        ?NLM_F_REQUEST bor ?NLM_F_ACK, seq(), Attrs),
-    case nfnl_socket:send(Sock, Msg) of
-        ok ->
-            %% First response: the object data
-            case nfnl_socket:recv(Sock) of
-                {ok, Data} ->
-                    Result = parse_obj_response(Data),
-                    %% Second response: the ACK — drain it
-                    _ = nfnl_socket:recv(Sock),
-                    Result;
-                {error, _} = Err ->
-                    Err
-            end;
-        {error, _} = Err ->
-            Err
+    Msg = nfnl_msg:build_hdr(
+        MsgType,
+        Family,
+        ?NLM_F_REQUEST bor ?NLM_F_ACK,
+        seq(),
+        Attrs
+    ),
+    maybe
+        ok ?= nfnl_socket:send(Sock, Msg),
+        %% First response: the object data
+        {ok, Data} ?= nfnl_socket:recv(Sock),
+        Result = parse_obj_response(Data),
+        %% Second response: the ACK — drain it
+        _ = nfnl_socket:recv(Sock),
+        Result
+    else
+        {error, _} = Err -> Err
     end.
 
-
--spec parse_obj_response(binary()) -> {ok, map()} | {error, term()}.
-parse_obj_response(<<Len:32/little, Type:16/little, _Flags:16/little,
-                     _Seq:32/little, _Pid:32/little, Rest/binary>>)
-  when Len >= 20 ->
+-spec parse_obj_response(binary()) ->
+    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}}
+    | {error, unexpected_subsystem | invalid_response}.
+parse_obj_response(
+    <<Len:32/little, Type:16/little, _Flags:16/little, _Seq:32/little, _Pid:32/little, Rest/binary>>
+) when
+    Len >= 20
+->
     Subsys = Type bsr 8,
     case Subsys of
         ?NFNL_SUBSYS_NFTABLES ->
@@ -179,23 +195,26 @@ parse_obj_response(_) ->
 -spec parse_counter_response([tuple()]) -> map().
 parse_counter_response(Attrs) ->
     M = #{},
-    M1 = case lists:keyfind(?NFTA_OBJ_NAME, 1, Attrs) of
-        {_, N} when is_binary(N) -> M#{name => strip_null(N)};
-        _ -> M
-    end,
-    M2 = case lists:keyfind(?NFTA_OBJ_DATA, 1, Attrs) of
-        {_, nested, Data} -> parse_counter_data(M1, Data);
-        {_, Bin} when is_binary(Bin) -> parse_counter_data(M1, nfnl_attr:decode(Bin));
-        _ -> M1
-    end,
+    M1 =
+        case lists:keyfind(?NFTA_OBJ_NAME, 1, Attrs) of
+            {_, N} when is_binary(N) -> M#{name => strip_null(N)};
+            _ -> M
+        end,
+    M2 =
+        case lists:keyfind(?NFTA_OBJ_DATA, 1, Attrs) of
+            {_, nested, Data} -> parse_counter_data(M1, Data);
+            {_, Bin} when is_binary(Bin) -> parse_counter_data(M1, nfnl_attr:decode(Bin));
+            _ -> M1
+        end,
     M2.
 
 -spec parse_counter_data(map(), [tuple()]) -> map().
 parse_counter_data(M, Data) ->
-    M1 = case lists:keyfind(?NFTA_COUNTER_BYTES, 1, Data) of
-        {_, <<B:64/big>>} -> M#{bytes => B};
-        _ -> M#{bytes => 0}
-    end,
+    M1 =
+        case lists:keyfind(?NFTA_COUNTER_BYTES, 1, Data) of
+            {_, <<B:64/big>>} -> M#{bytes => B};
+            _ -> M#{bytes => 0}
+        end,
     case lists:keyfind(?NFTA_COUNTER_PACKETS, 1, Data) of
         {_, <<P:64/big>>} -> M1#{packets => P};
         _ -> M1#{packets => 0}
@@ -208,8 +227,8 @@ table_matches(Attrs, Table) ->
         _ -> false
     end.
 
--spec send_and_collect(socket:socket(), binary()) ->
-    {ok, [[tuple()]]} | {error, term()}.
+-spec send_and_collect(socket:socket(), <<_:64, _:_*8>>) ->
+    {ok, [[tuple()]]} | {error, atom()}.
 send_and_collect(Sock, Msg) ->
     case nfnl_socket:send(Sock, Msg) of
         ok -> collect_dump(Sock, []);
@@ -217,7 +236,7 @@ send_and_collect(Sock, Msg) ->
     end.
 
 -spec collect_dump(socket:socket(), [[tuple()]]) ->
-    {ok, [[tuple()]]} | {error, term()}.
+    {ok, [[tuple()]]} | {error, atom()}.
 collect_dump(Sock, Acc) ->
     case nfnl_socket:recv(Sock) of
         {ok, Data} ->
@@ -234,12 +253,15 @@ collect_dump(Sock, Acc) ->
 -spec parse_dump(binary(), [[tuple()]]) -> {more | done, [[tuple()]]}.
 parse_dump(<<>>, Acc) ->
     {more, Acc};
-parse_dump(<<Len:32/little, ?NLMSG_DONE:16/little, _/binary>>, Acc)
-  when Len >= 16 ->
+parse_dump(<<Len:32/little, ?NLMSG_DONE:16/little, _/binary>>, Acc) when
+    Len >= 16
+->
     {done, Acc};
-parse_dump(<<Len:32/little, Type:16/little, _:16/little,
-             _:32/little, _:32/little, Rest/binary>>, Acc)
-  when Len >= 20 ->
+parse_dump(
+    <<Len:32/little, Type:16/little, _:16/little, _:32/little, _:32/little, Rest/binary>>, Acc
+) when
+    Len >= 20
+->
     Subsys = Type bsr 8,
     PayloadLen = Len - 16,
     <<Payload:PayloadLen/binary, Tail/binary>> = Rest,

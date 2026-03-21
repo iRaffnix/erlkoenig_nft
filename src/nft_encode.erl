@@ -40,7 +40,6 @@ Usage:
 
 -include("nft_constants.hrl").
 
-
 %% --- Public API ---
 
 -doc """
@@ -56,28 +55,24 @@ expr({payload, #{base := Base, offset := Offset, len := Len, dreg := DReg}}) ->
         offset => Offset,
         len => Len
     });
-
 %% === meta ===
 expr({meta, #{key := Key, dreg := DReg}}) ->
     nft_expr_meta_gen:encode(#{
         key => meta_key(Key),
         dreg => DReg
     });
-
 %% === ct (read: load into register) ===
 expr({ct, #{key := Key, dreg := DReg}}) ->
     nft_expr_ct_gen:encode(#{
         key => ct_key(Key),
         dreg => DReg
     });
-
 %% === ct (write: set from register) ===
 expr({ct, #{key := Key, sreg := SReg}}) ->
     nft_expr_ct_gen:encode(#{
         key => ct_key(Key),
         sreg => SReg
     });
-
 %% === cmp ===
 expr({cmp, #{sreg := SReg, op := Op, data := Data}}) ->
     nft_expr_cmp_gen:encode(#{
@@ -85,7 +80,6 @@ expr({cmp, #{sreg := SReg, op := Op, data := Data}}) ->
         op => cmp_op(Op),
         data => nft_data_value(Data)
     });
-
 %% === bitwise ===
 expr({bitwise, #{sreg := SReg, dreg := DReg, mask := Mask, xor_val := Xor}}) ->
     nft_expr_bitwise_gen:encode(#{
@@ -95,7 +89,6 @@ expr({bitwise, #{sreg := SReg, dreg := DReg, mask := Mask, xor_val := Xor}}) ->
         mask => nft_data_value(Mask),
         'xor' => nft_data_value(Xor)
     });
-
 %% === range ===
 expr({range, #{sreg := SReg, op := Op, from_data := From, to_data := To}}) ->
     nft_expr_range_gen:encode(#{
@@ -104,7 +97,6 @@ expr({range, #{sreg := SReg, op := Op, from_data := From, to_data := To}}) ->
         from_data => nft_data_value(From),
         to_data => nft_data_value(To)
     });
-
 %% === lookup (verdict map: dreg=0 means verdict register) ===
 expr({lookup, #{sreg := SReg, set := SetName, dreg := 0} = Opts}) ->
     nft_expr_lookup_gen:encode(#{
@@ -128,13 +120,11 @@ expr({lookup, #{sreg := SReg, set := SetName} = Opts}) ->
         sreg => SReg,
         set_id => maps:get(set_id, Opts, 0)
     });
-
 %% === counter ===
 expr({counter, #{packets := Pkts, bytes := Bytes}}) ->
     nft_expr_counter_gen:encode(#{bytes => Bytes, packets => Pkts});
 expr({counter, _}) ->
     nft_expr_counter_gen:encode(#{bytes => 0, packets => 0});
-
 %% === objref (counter) ===
 expr({objref, #{type := counter, name := Name}}) ->
     nft_expr_objref_gen:encode(#{
@@ -153,14 +143,19 @@ expr({objref, #{type := limit, name := Name}}) ->
         imm_type => ?NFT_OBJECT_LIMIT,
         imm_name => Name
     });
-
 %% === log ===
 expr({log, Opts}) ->
     nft_expr_log_gen:encode(Opts);
-
 %% === limit ===
-expr({limit, #{rate := Rate, unit := Unit, burst := Burst,
-               type := Type, flags := Flags}}) ->
+expr(
+    {limit, #{
+        rate := Rate,
+        unit := Unit,
+        burst := Burst,
+        type := Type,
+        flags := Flags
+    }}
+) ->
     nft_expr_limit_gen:encode(#{
         rate => Rate,
         unit => Unit,
@@ -168,73 +163,61 @@ expr({limit, #{rate := Rate, unit := Unit, burst := Burst,
         type => limit_type(Type),
         flags => Flags
     });
-
 %% === immediate (data into register) ===
 expr({immediate, #{dreg := DReg, data := Data}}) when is_binary(Data) ->
     nft_expr_immediate_gen:encode(#{
         dreg => DReg,
         data => nft_data_value(Data)
     });
-
 %% === immediate (verdict) ===
 expr({immediate, #{verdict := Verdict}}) ->
     encode_verdict(Verdict);
-
 %% === reject ===
 expr({reject, #{type := Type, icmp_code := Code}}) ->
     nft_expr_reject_gen:encode(#{type => Type, icmp_code => Code});
 expr({reject, _}) ->
     nft_expr_reject_gen:encode(#{type => 0, icmp_code => 3});
-
 %% === nat (SNAT / DNAT) ===
 expr({nat, #{type := Type} = Opts}) ->
     nft_expr_nat_gen:encode(Opts#{type := nat_type(Type)});
-
 %% === masq (masquerade / dynamic SNAT) ===
 expr({masq, Opts}) ->
     nft_expr_masq_gen:encode(Opts);
-
 %% === quota ===
 expr({quota, Opts}) ->
     nft_expr_quota_gen:encode(Opts);
-
 %% === hash ===
 expr({hash, Opts}) ->
     nft_expr_hash_gen:encode(Opts);
-
 %% === queue (NFQUEUE to userspace) ===
 expr({queue, Opts}) ->
     nft_expr_queue_gen:encode(Opts);
-
 %% === redir (port redirect) ===
 expr({redir, Opts}) ->
     nft_expr_redir_gen:encode(Opts);
-
 %% === notrack (conntrack bypass — name only, no attributes) ===
 expr({notrack, #{}}) ->
-    nfnl_attr:encode_str(1, <<"notrack">>);  %% NFTA_EXPR_NAME = 1
-
+    %% NFTA_EXPR_NAME = 1
+    nfnl_attr:encode_str(1, <<"notrack">>);
 %% === dynset with single nested expression (meter) ===
 expr({dynset, #{exprs := [SingleExpr]} = Opts}) ->
     %% For a single expression, use NFTA_DYNSET_EXPR (7) directly,
     %% matching libnftnl's behavior (nftnl_expr_dynset_build).
     EncodedExpr = expr(SingleExpr),
     nft_expr_dynset_gen:encode(
-        maps:remove(exprs, Opts#{expr => EncodedExpr}));
+        maps:remove(exprs, Opts#{expr => EncodedExpr})
+    );
 %% === dynset with multiple nested expressions ===
 expr({dynset, #{exprs := Exprs} = Opts}) ->
     %% For multiple expressions, use NFTA_DYNSET_EXPRESSIONS (10)
     %% with NFTA_LIST_ELEM wrapping.
-    EncodedExprs = iolist_to_binary([
-        nfnl_attr:encode_nested(1, expr(E)) || E <- Exprs
-    ]),
+    EncodedExprs = iolist_to_binary([nfnl_attr:encode_nested(1, expr(E)) || E <- Exprs]),
     nft_expr_dynset_gen:encode(
-        maps:remove(exprs, Opts#{expressions => EncodedExprs}));
-
+        maps:remove(exprs, Opts#{expressions => EncodedExprs})
+    );
 %% === socket (with symbolic key translation) ===
 expr({socket, #{key := Key} = Opts}) when is_atom(Key) ->
     nft_expr_socket_gen:encode(Opts#{key := socket_key(Key)});
-
 %% === catch-all: delegate directly to _gen module ===
 %% Any expression {ExprName, Opts} where ExprName is an atom and
 %% nft_expr_<ExprName>_gen:encode/1 exists will be dispatched here.
@@ -243,7 +226,8 @@ expr({socket, #{key := Key} = Opts}) when is_atom(Key) ->
 %% tproxy, tunnel, xfrm — and any future generated modules.
 expr({ExprName, Opts}) when is_atom(ExprName), is_map(Opts) ->
     Mod = list_to_existing_atom(
-        "nft_expr_" ++ atom_to_list(ExprName) ++ "_gen"),
+        "nft_expr_" ++ atom_to_list(ExprName) ++ "_gen"
+    ),
     Mod:encode(Opts).
 
 -doc "Encode a list of expression terms to a list of Netlink binaries.".
@@ -280,22 +264,27 @@ encode_verdict({goto, Chain}) ->
     encode_chain_verdict(?NFT_GOTO, Chain).
 
 encode_simple_verdict(Code) ->
-    VerdictNest = nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
-        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, Code)),
+    VerdictNest = nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
+        nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, Code)
+    ),
     build_immediate_verdict(VerdictNest).
 
 encode_chain_verdict(Code, Chain) ->
-    VerdictNest = nfnl_attr:encode_nested(?NFTA_DATA_VERDICT,
+    VerdictNest = nfnl_attr:encode_nested(
+        ?NFTA_DATA_VERDICT,
         iolist_to_binary([
             nfnl_attr:encode_u32(?NFTA_VERDICT_CODE, Code),
             nfnl_attr:encode_str(?NFTA_VERDICT_CHAIN, Chain)
-        ])),
+        ])
+    ),
     build_immediate_verdict(VerdictNest).
 
 build_immediate_verdict(VerdictNest) ->
     DataNest = nfnl_attr:encode_nested(?NFTA_IMMEDIATE_DATA, VerdictNest),
     Attrs = iolist_to_binary([
-        nfnl_attr:encode_u32(1, ?NFT_REG_VERDICT), %% NFTA_IMMEDIATE_DREG
+        %% NFTA_IMMEDIATE_DREG
+        nfnl_attr:encode_u32(1, ?NFT_REG_VERDICT),
         DataNest
     ]),
     nft_expr:build(<<"immediate">>, Attrs).
@@ -306,58 +295,59 @@ build_immediate_verdict(VerdictNest) ->
 
 %% Wrap raw binary data in NFTA_DATA_VALUE attribute
 nft_data_value(Bin) when is_binary(Bin) ->
-    nfnl_attr:encode(1, Bin). %% NFTA_DATA_VALUE = 1 (plain, not nested)
+    %% NFTA_DATA_VALUE = 1 (plain, not nested)
+    nfnl_attr:encode(1, Bin).
 
 %% ===================================================================
 %% Internal: Symbolic constant translation
 %% ===================================================================
 
-family_val(inet)    -> ?NFPROTO_INET;
-family_val(ip)      -> ?NFPROTO_IPV4;
-family_val(ip6)     -> ?NFPROTO_IPV6;
-family_val(arp)     -> 3;
-family_val(bridge)  -> 7;
-family_val(netdev)  -> 5;
+family_val(inet) -> ?NFPROTO_INET;
+family_val(ip) -> ?NFPROTO_IPV4;
+family_val(ip6) -> ?NFPROTO_IPV6;
+family_val(arp) -> 3;
+family_val(bridge) -> 7;
+family_val(netdev) -> 5;
 family_val(N) when is_integer(N) -> N.
 
-payload_base(link)      -> ?NFT_PAYLOAD_LL_HEADER;
-payload_base(network)   -> ?NFT_PAYLOAD_NETWORK_HEADER;
+payload_base(link) -> ?NFT_PAYLOAD_LL_HEADER;
+payload_base(network) -> ?NFT_PAYLOAD_NETWORK_HEADER;
 payload_base(transport) -> ?NFT_PAYLOAD_TRANSPORT_HEADER;
 payload_base(N) when is_integer(N) -> N.
 
-meta_key(len)      -> ?NFT_META_LEN;
+meta_key(len) -> ?NFT_META_LEN;
 meta_key(protocol) -> ?NFT_META_PROTOCOL;
-meta_key(nfproto)  -> ?NFT_META_NFPROTO;
-meta_key(l4proto)  -> ?NFT_META_L4PROTO;
-meta_key(iif)      -> ?NFT_META_IIF;
-meta_key(oif)      -> ?NFT_META_OIF;
-meta_key(iifname)  -> ?NFT_META_IIFNAME;
-meta_key(oifname)  -> ?NFT_META_OIFNAME;
-meta_key(mark)     -> ?NFT_META_MARK;
+meta_key(nfproto) -> ?NFT_META_NFPROTO;
+meta_key(l4proto) -> ?NFT_META_L4PROTO;
+meta_key(iif) -> ?NFT_META_IIF;
+meta_key(oif) -> ?NFT_META_OIF;
+meta_key(iifname) -> ?NFT_META_IIFNAME;
+meta_key(oifname) -> ?NFT_META_OIFNAME;
+meta_key(mark) -> ?NFT_META_MARK;
 meta_key(N) when is_integer(N) -> N.
 
-ct_key(state)    -> ?NFT_CT_STATE;
-ct_key(dir)      -> ?NFT_CT_DIRECTION;
-ct_key(status)   -> ?NFT_CT_STATUS;
-ct_key(mark)     -> ?NFT_CT_MARK;
-ct_key(l3proto)  -> ?NFT_CT_L3PROTOCOL;
+ct_key(state) -> ?NFT_CT_STATE;
+ct_key(dir) -> ?NFT_CT_DIRECTION;
+ct_key(status) -> ?NFT_CT_STATUS;
+ct_key(mark) -> ?NFT_CT_MARK;
+ct_key(l3proto) -> ?NFT_CT_L3PROTOCOL;
 ct_key(N) when is_integer(N) -> N.
 
-cmp_op(eq)  -> ?NFT_CMP_EQ;
+cmp_op(eq) -> ?NFT_CMP_EQ;
 cmp_op(neq) -> ?NFT_CMP_NEQ;
-cmp_op(lt)  -> ?NFT_CMP_LT;
+cmp_op(lt) -> ?NFT_CMP_LT;
 cmp_op(lte) -> ?NFT_CMP_LTE;
-cmp_op(gt)  -> ?NFT_CMP_GT;
+cmp_op(gt) -> ?NFT_CMP_GT;
 cmp_op(gte) -> ?NFT_CMP_GTE;
 cmp_op(N) when is_integer(N) -> N.
 
-range_op(eq)  -> ?NFT_RANGE_EQ;
+range_op(eq) -> ?NFT_RANGE_EQ;
 range_op(neq) -> ?NFT_RANGE_NEQ;
 range_op(N) when is_integer(N) -> N.
 
-limit_type(0)     -> ?NFT_LIMIT_PKTS;
-limit_type(1)     -> ?NFT_LIMIT_PKT_BYTES;
-limit_type(pkts)  -> ?NFT_LIMIT_PKTS;
+limit_type(0) -> ?NFT_LIMIT_PKTS;
+limit_type(1) -> ?NFT_LIMIT_PKT_BYTES;
+limit_type(pkts) -> ?NFT_LIMIT_PKTS;
 limit_type(bytes) -> ?NFT_LIMIT_PKT_BYTES.
 
 nat_type(snat) -> 0;
@@ -365,6 +355,6 @@ nat_type(dnat) -> 1;
 nat_type(N) when is_integer(N) -> N.
 
 socket_key(transparent) -> 0;
-socket_key(mark)        -> 1;
-socket_key(wildcard)    -> 2;
-socket_key(cgroupv2)    -> 3.
+socket_key(mark) -> 1;
+socket_key(wildcard) -> 2;
+socket_key(cgroupv2) -> 3.

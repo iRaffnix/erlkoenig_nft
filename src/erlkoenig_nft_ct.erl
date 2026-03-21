@@ -50,8 +50,15 @@ Public API:
 -behaviour(gen_server).
 
 -export([start_link/0, start_link/1, stop/1]).
--export([count/0, count_by_src/1, top_sources/1,
-         connections/0, mode/0, stats/0, kill_by_src/1]).
+-export([
+    count/0,
+    count_by_src/1,
+    top_sources/1,
+    connections/0,
+    mode/0,
+    stats/0,
+    kill_by_src/1
+]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export_type([ct_key/0, ct_event/0]).
 
@@ -63,24 +70,24 @@ Public API:
 -define(NETLINK_NETFILTER, 12).
 
 %% Subsystem + message types
--define(IPCTNL_MSG_CT_NEW,     0).
--define(IPCTNL_MSG_CT_GET,     1).
--define(IPCTNL_MSG_CT_DELETE,  2).
+-define(IPCTNL_MSG_CT_NEW, 0).
+-define(IPCTNL_MSG_CT_GET, 1).
+-define(IPCTNL_MSG_CT_DELETE, 2).
 
 %% Top-level conntrack attributes
--define(CTA_TUPLE_ORIG,    1).
--define(CTA_TUPLE_REPLY,   2).
--define(CTA_STATUS,        3).
--define(CTA_PROTOINFO,     4).
--define(CTA_TIMEOUT,       7).
--define(CTA_MARK,          8).
--define(CTA_ID,           12).
--define(CTA_ZONE,         18).
--define(CTA_TIMESTAMP,    20).
+-define(CTA_TUPLE_ORIG, 1).
+-define(CTA_TUPLE_REPLY, 2).
+-define(CTA_STATUS, 3).
+-define(CTA_PROTOINFO, 4).
+-define(CTA_TIMEOUT, 7).
+-define(CTA_MARK, 8).
+-define(CTA_ID, 12).
+-define(CTA_ZONE, 18).
+-define(CTA_TIMESTAMP, 20).
 
 %% Tuple attributes
--define(CTA_TUPLE_IP,      1).
--define(CTA_TUPLE_PROTO,   2).
+-define(CTA_TUPLE_IP, 1).
+-define(CTA_TUPLE_PROTO, 2).
 
 %% IP attributes
 -define(CTA_IP_V4_SRC, 1).
@@ -89,16 +96,16 @@ Public API:
 -define(CTA_IP_V6_DST, 4).
 
 %% Proto attributes
--define(CTA_PROTO_NUM,      1).
+-define(CTA_PROTO_NUM, 1).
 -define(CTA_PROTO_SRC_PORT, 2).
 -define(CTA_PROTO_DST_PORT, 3).
--define(CTA_PROTO_ICMP_ID,  4).
+-define(CTA_PROTO_ICMP_ID, 4).
 -define(CTA_PROTO_ICMP_TYPE, 5).
 -define(CTA_PROTO_ICMP_CODE, 6).
 
 %% Protocol numbers
--define(IPPROTO_TCP,  6).
--define(IPPROTO_UDP,  17).
+-define(IPPROTO_TCP, 6).
+-define(IPPROTO_UDP, 17).
 -define(IPPROTO_ICMP, 1).
 
 %% Default config
@@ -110,19 +117,21 @@ Public API:
 
 %% --- Types ---
 
--type ct_key() :: {Proto :: non_neg_integer(),
-                   SrcIP :: binary(),
-                   SrcPort :: non_neg_integer(),
-                   DstIP :: binary(),
-                   DstPort :: non_neg_integer()}.
+-type ct_key() :: {
+    Proto :: non_neg_integer(),
+    SrcIP :: binary(),
+    SrcPort :: non_neg_integer(),
+    DstIP :: binary(),
+    DstPort :: non_neg_integer()
+}.
 
 -type ct_event() :: #{
-    proto     => non_neg_integer(),
+    proto => non_neg_integer(),
     proto_name => binary(),
-    src       => binary(),
-    dst       => binary(),
-    sport     => non_neg_integer(),
-    dport     => non_neg_integer()
+    src => binary(),
+    dst => binary(),
+    sport => non_neg_integer(),
+    dport => non_neg_integer()
 }.
 
 %% --- Public API ---
@@ -151,7 +160,8 @@ count() ->
 -spec count_by_src(binary()) -> non_neg_integer().
 count_by_src(SrcIP) when is_binary(SrcIP) ->
     case ets:info(?CT_AGG, size) of
-        undefined -> 0;
+        undefined ->
+            0;
         _ ->
             case ets:lookup(?CT_AGG, SrcIP) of
                 [{_, Count, _, _}] -> Count;
@@ -169,15 +179,29 @@ top_sources(N) when is_integer(N), N > 0 ->
 -doc "List all tracked connections (only in full mode).".
 -spec connections() -> [map()].
 connections() ->
-    ets:foldl(fun
-        ({Key, State, Ts, Timeout}, Acc) when is_tuple(Key) ->
-            {Proto, Src, SPort, Dst, DPort} = Key,
-            [#{proto => Proto, src => Src, sport => SPort,
-               dst => Dst, dport => DPort,
-               state => State, timestamp => Ts,
-               timeout => Timeout} | Acc];
-        (_, Acc) -> Acc
-    end, [], ?CT_TAB).
+    ets:foldl(
+        fun
+            ({Key, State, Ts, Timeout}, Acc) when is_tuple(Key) ->
+                {Proto, Src, SPort, Dst, DPort} = Key,
+                [
+                    #{
+                        proto => Proto,
+                        src => Src,
+                        sport => SPort,
+                        dst => Dst,
+                        dport => DPort,
+                        state => State,
+                        timestamp => Ts,
+                        timeout => Timeout
+                    }
+                    | Acc
+                ];
+            (_, Acc) ->
+                Acc
+        end,
+        [],
+        ?CT_TAB
+    ).
 
 -doc "Current tracking mode: full or aggregate.".
 -spec mode() -> full | aggregate.
@@ -191,13 +215,16 @@ stats() ->
 
 -doc "Request kernel to kill all connections from a source IP (4 or 16 byte binary).".
 -spec kill_by_src(binary()) -> ok | {error, term()}.
-kill_by_src(SrcIP) when is_binary(SrcIP),
-                         (byte_size(SrcIP) =:= 4 orelse byte_size(SrcIP) =:= 16) ->
+kill_by_src(SrcIP) when
+    is_binary(SrcIP),
+    (byte_size(SrcIP) =:= 4 orelse byte_size(SrcIP) =:= 16)
+->
     gen_server:call(?MODULE, {kill_by_src, SrcIP}).
 
 %% --- gen_server callbacks ---
 
 init(Opts) ->
+    proc_lib:set_label(erlkoenig_nft_ct),
     MaxEntries = maps:get(max_entries, Opts, ?DEFAULT_MAX_ENTRIES),
 
     %% Create ETS tables
@@ -210,12 +237,12 @@ init(Opts) ->
         {ok, Sock} ->
             request_recv(Sock),
             {ok, #{
-                socket      => Sock,
-                mode        => full,
+                socket => Sock,
+                mode => full,
                 max_entries => MaxEntries,
-                ct_new      => 0,
-                ct_destroy  => 0,
-                ct_dropped  => 0,
+                ct_new => 0,
+                ct_destroy => 0,
+                ct_dropped => 0,
                 mode_switches => 0
             }};
         {error, Reason} ->
@@ -224,10 +251,15 @@ init(Opts) ->
 
 handle_call(mode, _From, #{mode := Mode} = State) ->
     {reply, Mode, State};
-
 handle_call(stats, _From, State) ->
-    #{ct_new := New, ct_destroy := Destroy, ct_dropped := Dropped,
-      mode := Mode, mode_switches := Switches, max_entries := Max} = State,
+    #{
+        ct_new := New,
+        ct_destroy := Destroy,
+        ct_dropped := Dropped,
+        mode := Mode,
+        mode_switches := Switches,
+        max_entries := Max
+    } = State,
     Stats = #{
         mode => Mode,
         connections => ets:info(?CT_TAB, size),
@@ -239,12 +271,10 @@ handle_call(stats, _From, State) ->
         max_entries => Max
     },
     {reply, Stats, State};
-
 handle_call({kill_by_src, SrcIP}, _From, #{socket := Sock} = State) ->
     %% Find matching connections and send delete for each
     Result = kill_connections(Sock, SrcIP),
     {reply, Result, State};
-
 handle_call(_Req, _From, State) ->
     {reply, {error, unknown}, State}.
 
@@ -271,15 +301,20 @@ open_ct_socket() ->
         {ok, Sock} ->
             %% Build multicast group bitmask:
             %% bit N subscribes to group N+1
-            Groups = (1 bsl (?NFNLGRP_CONNTRACK_NEW - 1)) bor
-                     (1 bsl (?NFNLGRP_CONNTRACK_DESTROY - 1)),
+            Groups =
+                (1 bsl (?NFNLGRP_CONNTRACK_NEW - 1)) bor
+                    (1 bsl (?NFNLGRP_CONNTRACK_DESTROY - 1)),
             SaData = <<0:16, 0:32/native, Groups:32/native, 0:32/native>>,
             Addr = #{family => ?AF_NETLINK, addr => SaData},
             case socket:bind(Sock, Addr) of
-                ok    -> {ok, Sock};
-                Err   -> _ = socket:close(Sock), Err
+                ok ->
+                    {ok, Sock};
+                Err ->
+                    _ = socket:close(Sock),
+                    Err
             end;
-        Err -> Err
+        Err ->
+            Err
     end.
 
 request_recv(Sock) ->
@@ -306,27 +341,34 @@ recv_loop(Sock, State) ->
 
 %% --- Internal: Message Processing ---
 
-process_messages(<<>>, State) -> State;
-process_messages(<<Len:32/little, Type:16/little, _Flags:16/little,
-                   _Seq:32/little, _Pid:32/little, Rest/binary>>, State)
-  when Len >= 20 ->
+process_messages(<<>>, State) ->
+    State;
+process_messages(
+    <<Len:32/little, Type:16/little, _Flags:16/little, _Seq:32/little, _Pid:32/little,
+        Rest/binary>>,
+    State
+) when
+    Len >= 20
+->
     Subsys = Type bsr 8,
     MsgType = Type band 16#FF,
     PayloadLen = Len - 16,
     case byte_size(Rest) >= PayloadLen of
         true ->
             <<Payload:PayloadLen/binary, Tail/binary>> = Rest,
-            State2 = case Subsys of
-                ?NFNL_SUBSYS_CTNETLINK ->
-                    handle_ct_msg(MsgType, Payload, State);
-                _ ->
-                    State
-            end,
+            State2 =
+                case Subsys of
+                    ?NFNL_SUBSYS_CTNETLINK ->
+                        handle_ct_msg(MsgType, Payload, State);
+                    _ ->
+                        State
+                end,
             process_messages(Tail, State2);
         false ->
             State
     end;
-process_messages(_, State) -> State.
+process_messages(_, State) ->
+    State.
 
 handle_ct_msg(MsgType, Payload, State) when byte_size(Payload) >= 4 ->
     <<_NfGenMsg:4/binary, AttrBin/binary>> = Payload,
@@ -340,12 +382,19 @@ handle_ct_msg(MsgType, Payload, State) when byte_size(Payload) >= 4 ->
         _ ->
             State
     end;
-handle_ct_msg(_, _, State) -> State.
+handle_ct_msg(_, _, State) ->
+    State.
 
 %% --- Internal: Event Handling ---
 
-handle_new(#{src := _} = Event, #{mode := Mode, max_entries := Max,
-                    ct_new := N} = State) ->
+handle_new(
+    #{src := _} = Event,
+    #{
+        mode := Mode,
+        max_entries := Max,
+        ct_new := N
+    } = State
+) ->
     broadcast({ct_new, Event}),
     State2 = State#{ct_new := N + 1},
 
@@ -365,8 +414,7 @@ handle_new(#{src := _} = Event, #{mode := Mode, max_entries := Max,
                 false ->
                     Key = event_key(Event),
                     Timeout = maps:get(timeout, Event, 0),
-                    ets:insert(?CT_TAB, {Key, established,
-                                         erlang:system_time(second), Timeout}),
+                    ets:insert(?CT_TAB, {Key, established, erlang:system_time(second), Timeout}),
                     State2
             end;
         aggregate ->
@@ -394,8 +442,13 @@ handle_destroy(#{src := _} = Event, #{ct_destroy := N, mode := Mode} = State) ->
 handle_destroy(_EventNoSrc, State) ->
     State.
 
-event_key(#{proto := Proto, src := Src, sport := SPort,
-            dst := Dst, dport := DPort}) ->
+event_key(#{
+    proto := Proto,
+    src := Src,
+    sport := SPort,
+    dst := Dst,
+    dport := DPort
+}) ->
     {Proto, Src, SPort, Dst, DPort};
 event_key(#{proto := Proto, src := Src, dst := Dst}) ->
     {Proto, Src, 0, Dst, 0};
@@ -422,21 +475,30 @@ update_agg(#{src := SrcIP}, Delta) ->
 kill_connections(Sock, SrcIP) ->
     %% Find all connections from this source
     Conns = ets:match_object(?CT_TAB, {{'_', SrcIP, '_', '_', '_'}, '_', '_', '_'}),
-    lists:foreach(fun({Key, _, _, _}) ->
-        send_ct_delete(Sock, Key)
-    end, Conns),
+    lists:foreach(
+        fun({Key, _, _, _}) ->
+            send_ct_delete(Sock, Key)
+        end,
+        Conns
+    ),
     %% Also clean ETS
-    lists:foreach(fun({Key, _, _, _}) ->
-        ets:delete(?CT_TAB, Key)
-    end, Conns),
+    lists:foreach(
+        fun({Key, _, _, _}) ->
+            ets:delete(?CT_TAB, Key)
+        end,
+        Conns
+    ),
     ok.
 
 send_ct_delete(Sock, {Proto, SrcIP, SrcPort, DstIP, DstPort}) ->
     %% Build CTA_TUPLE_ORIG with nested IP + Proto
-    {SrcAttrType, DstAttrType, AF} = case byte_size(SrcIP) of
-        4  -> {?CTA_IP_V4_SRC, ?CTA_IP_V4_DST, 2};   %% AF_INET
-        16 -> {?CTA_IP_V6_SRC, ?CTA_IP_V6_DST, 10}   %% AF_INET6
-    end,
+    {SrcAttrType, DstAttrType, AF} =
+        case byte_size(SrcIP) of
+            %% AF_INET
+            4 -> {?CTA_IP_V4_SRC, ?CTA_IP_V4_DST, 2};
+            %% AF_INET6
+            16 -> {?CTA_IP_V6_SRC, ?CTA_IP_V6_DST, 10}
+        end,
     IpAttrs = iolist_to_binary([
         nfnl_attr:encode(SrcAttrType, SrcIP),
         nfnl_attr:encode(DstAttrType, DstIP)
@@ -449,7 +511,8 @@ send_ct_delete(Sock, {Proto, SrcIP, SrcPort, DstIP, DstPort}) ->
                     nfnl_attr:encode(?CTA_PROTO_SRC_PORT, <<SrcPort:16/big>>),
                     nfnl_attr:encode(?CTA_PROTO_DST_PORT, <<DstPort:16/big>>)
                 ]);
-            _ -> <<>>
+            _ ->
+                <<>>
         end
     ]),
     TupleAttrs = iolist_to_binary([
@@ -459,20 +522,24 @@ send_ct_delete(Sock, {Proto, SrcIP, SrcPort, DstIP, DstPort}) ->
     TupleOrig = nfnl_attr:encode_nested(?CTA_TUPLE_ORIG, TupleAttrs),
 
     %% Frame as IPCTNL_MSG_CT_DELETE
-    NfGenMsg = <<AF:8, 0:8, 0:16>>,  %% AF_INET or AF_INET6, version 0, res_id 0
+
+    %% AF_INET or AF_INET6, version 0, res_id 0
+    NfGenMsg = <<AF:8, 0:8, 0:16>>,
     Payload = <<NfGenMsg/binary, TupleOrig/binary>>,
     MsgType = (?NFNL_SUBSYS_CTNETLINK bsl 8) bor ?IPCTNL_MSG_CT_DELETE,
     Flags = ?NLM_F_REQUEST bor ?NLM_F_ACK,
     Seq = erlang:unique_integer([positive]) band 16#FFFFFFFF,
     Len = 16 + byte_size(Payload),
-    Msg = <<Len:32/little, MsgType:16/little, Flags:16/little,
-            Seq:32/little, 0:32/little, Payload/binary>>,
+    Msg =
+        <<Len:32/little, MsgType:16/little, Flags:16/little, Seq:32/little, 0:32/little,
+            Payload/binary>>,
     case socket:send(Sock, Msg) of
         ok ->
             %% Drain ACK
             _ = socket:recv(Sock, 0, 500),
             ok;
-        Err -> Err
+        Err ->
+            Err
     end.
 
 %% --- Internal: CT Event Parsing ---
@@ -493,45 +560,53 @@ find_nested(Type, Attrs) ->
 
 parse_ct_event(Attrs) ->
     M = #{},
-    M1 = case find_nested(?CTA_TUPLE_ORIG, Attrs) of
-        {ok, TupleAttrs} -> parse_tuple(M, TupleAttrs);
-        error -> M
-    end,
-    M2 = case lists:keyfind(?CTA_TIMEOUT, 1, Attrs) of
-        {_, <<Timeout:32/big>>} -> M1#{timeout => Timeout};
-        _ -> M1
-    end,
-    M3 = case lists:keyfind(?CTA_STATUS, 1, Attrs) of
-        {_, <<Status:32/big>>} -> M2#{status => Status};
-        _ -> M2
-    end,
-    M4 = case lists:keyfind(?CTA_MARK, 1, Attrs) of
-        {_, <<Mark:32/big>>} -> M3#{mark => Mark};
-        _ -> M3
-    end,
+    M1 =
+        case find_nested(?CTA_TUPLE_ORIG, Attrs) of
+            {ok, TupleAttrs} -> parse_tuple(M, TupleAttrs);
+            error -> M
+        end,
+    M2 =
+        case lists:keyfind(?CTA_TIMEOUT, 1, Attrs) of
+            {_, <<Timeout:32/big>>} -> M1#{timeout => Timeout};
+            _ -> M1
+        end,
+    M3 =
+        case lists:keyfind(?CTA_STATUS, 1, Attrs) of
+            {_, <<Status:32/big>>} -> M2#{status => Status};
+            _ -> M2
+        end,
+    M4 =
+        case lists:keyfind(?CTA_MARK, 1, Attrs) of
+            {_, <<Mark:32/big>>} -> M3#{mark => Mark};
+            _ -> M3
+        end,
     M4.
 
 parse_tuple(M, TupleAttrs) ->
-    M1 = case find_nested(?CTA_TUPLE_IP, TupleAttrs) of
-        {ok, IpAttrs} -> parse_ip(M, IpAttrs);
-        error -> M
-    end,
+    M1 =
+        case find_nested(?CTA_TUPLE_IP, TupleAttrs) of
+            {ok, IpAttrs} -> parse_ip(M, IpAttrs);
+            error -> M
+        end,
     case find_nested(?CTA_TUPLE_PROTO, TupleAttrs) of
         {ok, ProtoAttrs} -> parse_proto(M1, ProtoAttrs);
         error -> M1
     end.
 
 parse_ip(M, IpAttrs) ->
-    M1 = case lists:keyfind(?CTA_IP_V4_SRC, 1, IpAttrs) of
-        {_, <<A, B, C, D>>} -> M#{src => <<A, B, C, D>>};
-        _ ->
-            case lists:keyfind(?CTA_IP_V6_SRC, 1, IpAttrs) of
-                {_, <<Src:16/binary>>} -> M#{src => Src};
-                _ -> M
-            end
-    end,
+    M1 =
+        case lists:keyfind(?CTA_IP_V4_SRC, 1, IpAttrs) of
+            {_, <<A, B, C, D>>} ->
+                M#{src => <<A, B, C, D>>};
+            _ ->
+                case lists:keyfind(?CTA_IP_V6_SRC, 1, IpAttrs) of
+                    {_, <<Src:16/binary>>} -> M#{src => Src};
+                    _ -> M
+                end
+        end,
     case lists:keyfind(?CTA_IP_V4_DST, 1, IpAttrs) of
-        {_, <<A2, B2, C2, D2>>} -> M1#{dst => <<A2, B2, C2, D2>>};
+        {_, <<A2, B2, C2, D2>>} ->
+            M1#{dst => <<A2, B2, C2, D2>>};
         _ ->
             case lists:keyfind(?CTA_IP_V6_DST, 1, IpAttrs) of
                 {_, <<Dst:16/binary>>} -> M1#{dst => Dst};
@@ -540,21 +615,23 @@ parse_ip(M, IpAttrs) ->
     end.
 
 parse_proto(M, ProtoAttrs) ->
-    M1 = case lists:keyfind(?CTA_PROTO_NUM, 1, ProtoAttrs) of
-        {_, <<Proto:8>>} -> M#{proto => Proto, proto_name => proto_name(Proto)};
-        _ -> M
-    end,
-    M2 = case lists:keyfind(?CTA_PROTO_SRC_PORT, 1, ProtoAttrs) of
-        {_, <<SPort:16/big>>} -> M1#{sport => SPort};
-        _ -> M1
-    end,
+    M1 =
+        case lists:keyfind(?CTA_PROTO_NUM, 1, ProtoAttrs) of
+            {_, <<Proto:8>>} -> M#{proto => Proto, proto_name => proto_name(Proto)};
+            _ -> M
+        end,
+    M2 =
+        case lists:keyfind(?CTA_PROTO_SRC_PORT, 1, ProtoAttrs) of
+            {_, <<SPort:16/big>>} -> M1#{sport => SPort};
+            _ -> M1
+        end,
     case lists:keyfind(?CTA_PROTO_DST_PORT, 1, ProtoAttrs) of
         {_, <<DPort:16/big>>} -> M2#{dport => DPort};
         _ -> M2
     end.
 
-proto_name(?IPPROTO_TCP)  -> <<"tcp">>;
-proto_name(?IPPROTO_UDP)  -> <<"udp">>;
+proto_name(?IPPROTO_TCP) -> <<"tcp">>;
+proto_name(?IPPROTO_UDP) -> <<"udp">>;
 proto_name(?IPPROTO_ICMP) -> <<"icmp">>;
 proto_name(N) -> integer_to_binary(N).
 

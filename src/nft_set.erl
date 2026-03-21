@@ -51,26 +51,33 @@ Corresponds to libnftnl src/set.c.
 
 %% --- Types ---
 
--type set_type() :: ipv4_addr | ipv6_addr | ether_addr
-                  | inet_proto | inet_service | mark
-                  | non_neg_integer().
+-type set_type() ::
+    ipv4_addr
+    | ipv6_addr
+    | ether_addr
+    | inet_proto
+    | inet_service
+    | mark
+    | non_neg_integer().
 
 -type set_opts() :: #{
-    table    := binary(),
-    name     := binary(),
-    type     := set_type(),
-    flags    => [atom()],
-    id       => non_neg_integer(),
-    timeout  => non_neg_integer()   %% milliseconds
+    table := binary(),
+    name := binary(),
+    type := set_type(),
+    flags => [atom()],
+    id => non_neg_integer(),
+    %% milliseconds
+    timeout => non_neg_integer()
 }.
 
 -type concat_opts() :: #{
-    table      := binary(),
-    name       := binary(),
-    fields     := [set_type()],   %% e.g. [ipv4_addr, inet_service]
-    flags      => [atom()],
-    id         => non_neg_integer(),
-    timeout    => non_neg_integer()
+    table := binary(),
+    name := binary(),
+    %% e.g. [ipv4_addr, inet_service]
+    fields := [set_type()],
+    flags => [atom()],
+    id => non_neg_integer(),
+    timeout => non_neg_integer()
 }.
 
 -include("nft_constants.hrl").
@@ -95,28 +102,30 @@ Example:
 """.
 -spec add(0..255, set_opts(), non_neg_integer()) -> nfnl_msg:nl_msg().
 add(Family, Opts, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
-    Table   = maps:get(table, Opts),
-    Name    = maps:get(name, Opts),
-    Type    = maps:get(type, Opts),
-    Flags   = maps:get(flags, Opts, []),
-    Id      = maps:get(id, Opts, 1),
+    Table = maps:get(table, Opts),
+    Name = maps:get(name, Opts),
+    Type = maps:get(type, Opts),
+    Flags = maps:get(flags, Opts, []),
+    Id = maps:get(id, Opts, 1),
     Timeout = maps:get(timeout, Opts, undefined),
 
     {KeyType, KeyLen} = type_info(Type),
     FlagVal = encode_flags(Flags),
 
-    Attrs = iolist_to_binary(lists:flatten([
-        nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
-        nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
-        nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
-        nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
-        nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, KeyLen),
-        nfnl_attr:encode_u32(?NFTA_SET_ID, Id),
-        case Timeout of
-            undefined -> [];
-            Ms -> [nfnl_attr:encode_u64(?NFTA_SET_TIMEOUT, Ms)]
-        end
-    ])),
+    Attrs = iolist_to_binary(
+        lists:flatten([
+            nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
+            nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
+            nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
+            nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
+            nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, KeyLen),
+            nfnl_attr:encode_u32(?NFTA_SET_ID, Id),
+            case Timeout of
+                undefined -> [];
+                Ms -> [nfnl_attr:encode_u64(?NFTA_SET_TIMEOUT, Ms)]
+            end
+        ])
+    ),
 
     NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
     nfnl_msg:build_hdr(?NFT_MSG_NEWSET, Family, NlFlags, Seq, Attrs).
@@ -160,22 +169,24 @@ Example:
 -spec add_vmap(0..255, set_opts(), non_neg_integer(), non_neg_integer()) ->
     nfnl_msg:nl_msg().
 add_vmap(Family, Opts, Id, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
-    Table   = maps:get(table, Opts),
-    Name    = maps:get(name, Opts),
-    Type    = maps:get(type, Opts),
+    Table = maps:get(table, Opts),
+    Name = maps:get(name, Opts),
+    Type = maps:get(type, Opts),
 
     {KeyType, KeyLen} = type_info(Type),
     FlagVal = ?NFT_SET_MAP,
 
-    Attrs = iolist_to_binary(lists:flatten([
-        nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
-        nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
-        nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
-        nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
-        nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, KeyLen),
-        nfnl_attr:encode_u32(?NFTA_SET_DATA_TYPE, ?NFT_DATA_VERDICT),
-        nfnl_attr:encode_u32(?NFTA_SET_ID, Id)
-    ])),
+    Attrs = iolist_to_binary(
+        lists:flatten([
+            nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
+            nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
+            nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
+            nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
+            nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, KeyLen),
+            nfnl_attr:encode_u32(?NFTA_SET_DATA_TYPE, ?NFT_DATA_VERDICT),
+            nfnl_attr:encode_u32(?NFTA_SET_ID, Id)
+        ])
+    ),
 
     NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
     nfnl_msg:build_hdr(?NFT_MSG_NEWSET, Family, NlFlags, Seq, Attrs).
@@ -200,11 +211,11 @@ Example:
 """.
 -spec add_concat(0..255, concat_opts(), non_neg_integer()) -> nfnl_msg:nl_msg().
 add_concat(Family, Opts, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
-    Table   = maps:get(table, Opts),
-    Name    = maps:get(name, Opts),
-    Fields  = maps:get(fields, Opts),
-    Flags   = maps:get(flags, Opts, []),
-    Id      = maps:get(id, Opts, 1),
+    Table = maps:get(table, Opts),
+    Name = maps:get(name, Opts),
+    Fields = maps:get(fields, Opts),
+    Flags = maps:get(flags, Opts, []),
+    Id = maps:get(id, Opts, 1),
     Timeout = maps:get(timeout, Opts, undefined),
 
     %% Compute total key length and concat key type
@@ -219,26 +230,30 @@ add_concat(Family, Opts, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
 
     %% Build NFTA_SET_DESC_CONCAT: nested list of field length descriptors
     ConcatFields = iolist_to_binary([
-        nfnl_attr:encode_nested(?NFTA_SET_FIELD_LEN,
-            nfnl_attr:encode_u32(?NFTA_SET_FIELD_LEN, Len))
-        || {_Type, Len} <- FieldInfos
+        nfnl_attr:encode_nested(
+            ?NFTA_SET_FIELD_LEN,
+            nfnl_attr:encode_u32(?NFTA_SET_FIELD_LEN, Len)
+        )
+     || {_Type, Len} <- FieldInfos
     ]),
     DescAttrs = nfnl_attr:encode_nested(?NFTA_SET_DESC_CONCAT, ConcatFields),
     SetDesc = nfnl_attr:encode_nested(?NFTA_SET_DESC, DescAttrs),
 
-    Attrs = iolist_to_binary(lists:flatten([
-        nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
-        nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
-        nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
-        nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
-        nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, TotalKeyLen),
-        nfnl_attr:encode_u32(?NFTA_SET_ID, Id),
-        SetDesc,
-        case Timeout of
-            undefined -> [];
-            Ms -> [nfnl_attr:encode_u64(?NFTA_SET_TIMEOUT, Ms)]
-        end
-    ])),
+    Attrs = iolist_to_binary(
+        lists:flatten([
+            nfnl_attr:encode_str(?NFTA_SET_TABLE, Table),
+            nfnl_attr:encode_str(?NFTA_SET_NAME, Name),
+            nfnl_attr:encode_u32(?NFTA_SET_FLAGS, FlagVal),
+            nfnl_attr:encode_u32(?NFTA_SET_KEY_TYPE, KeyType),
+            nfnl_attr:encode_u32(?NFTA_SET_KEY_LEN, TotalKeyLen),
+            nfnl_attr:encode_u32(?NFTA_SET_ID, Id),
+            SetDesc,
+            case Timeout of
+                undefined -> [];
+                Ms -> [nfnl_attr:encode_u64(?NFTA_SET_TIMEOUT, Ms)]
+            end
+        ])
+    ),
 
     NlFlags = ?NLM_F_REQUEST bor ?NLM_F_ACK bor ?NLM_F_CREATE,
     nfnl_msg:build_hdr(?NFT_MSG_NEWSET, Family, NlFlags, Seq, Attrs).
@@ -246,12 +261,12 @@ add_concat(Family, Opts, Seq) when is_map(Opts), is_integer(Seq), Seq >= 0 ->
 %% --- Internal ---
 
 -spec type_info(set_type()) -> {non_neg_integer(), non_neg_integer()}.
-type_info(ipv4_addr)    -> {7,  4};
-type_info(ipv6_addr)    -> {8,  16};
-type_info(ether_addr)   -> {9,  6};
-type_info(inet_proto)   -> {12, 1};
+type_info(ipv4_addr) -> {7, 4};
+type_info(ipv6_addr) -> {8, 16};
+type_info(ether_addr) -> {9, 6};
+type_info(inet_proto) -> {12, 1};
 type_info(inet_service) -> {13, 2};
-type_info(mark)         -> {19, 4};
+type_info(mark) -> {19, 4};
 type_info(N) when is_integer(N) -> {N, 4}.
 
 -spec encode_flags([atom()]) -> non_neg_integer().
@@ -260,17 +275,17 @@ encode_flags(Flags) ->
 
 -spec flag_val(atom(), non_neg_integer()) -> non_neg_integer().
 flag_val(anonymous, Acc) -> Acc bor ?NFT_SET_ANONYMOUS;
-flag_val(constant, Acc)  -> Acc bor ?NFT_SET_CONSTANT;
-flag_val(interval, Acc)  -> Acc bor ?NFT_SET_INTERVAL;
-flag_val(map, Acc)       -> Acc bor ?NFT_SET_MAP;
-flag_val(timeout, Acc)   -> Acc bor ?NFT_SET_TIMEOUT;
-flag_val(eval, Acc)      -> Acc bor ?NFT_SET_EVAL;
-flag_val(concat, Acc)    -> Acc bor ?NFT_SET_CONCAT.
+flag_val(constant, Acc) -> Acc bor ?NFT_SET_CONSTANT;
+flag_val(interval, Acc) -> Acc bor ?NFT_SET_INTERVAL;
+flag_val(map, Acc) -> Acc bor ?NFT_SET_MAP;
+flag_val(timeout, Acc) -> Acc bor ?NFT_SET_TIMEOUT;
+flag_val(eval, Acc) -> Acc bor ?NFT_SET_EVAL;
+flag_val(concat, Acc) -> Acc bor ?NFT_SET_CONCAT.
 
 %% Build a composite key type for concatenated sets.
 %% The kernel uses: key_type = type1 | (type2 << 8) | (type3 << 16) ...
 %% This matches libnftnl's nftnl_set_concat_hash().
--spec concat_key_type([{non_neg_integer(), non_neg_integer()}]) -> non_neg_integer().
+-spec concat_key_type([{non_neg_integer(), 1 | 2 | 4 | 6 | 16}]) -> non_neg_integer().
 concat_key_type(FieldInfos) ->
     concat_key_type(FieldInfos, 0, 0).
 

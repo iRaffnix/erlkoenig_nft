@@ -97,7 +97,8 @@ parse_messages(<<Len:32/little, _Type:16/little, _/binary>> = Bin, Acc) when
 parse_messages(_Other, Acc) ->
     lists:reverse(Acc).
 
--spec errno_name(integer()) -> eacces | eexist | einval | enoent | enomem | enospc | eopnotsupp | eperm | unknown.
+-spec errno_name(integer()) ->
+    eacces | eexist | einval | enoent | enomem | enospc | eopnotsupp | eperm | unknown.
 errno_name(-1) -> eperm;
 errno_name(-2) -> enoent;
 errno_name(-12) -> enomem;

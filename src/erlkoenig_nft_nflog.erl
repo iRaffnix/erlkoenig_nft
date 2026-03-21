@@ -147,7 +147,17 @@ process_messages(
 process_messages(_) ->
     ok.
 
--spec parse_packet([{char(), binary()} | {char(), nested, [any()]}]) -> #{dport => char(), dst => binary(), iface => non_neg_integer(), len => non_neg_integer(), prefix => binary(), proto => binary(), sport => char(), src => binary()}.
+-spec parse_packet([{char(), binary()} | {char(), nested, [any()]}]) ->
+    #{
+        dport => char(),
+        dst => binary(),
+        iface => non_neg_integer(),
+        len => non_neg_integer(),
+        prefix => binary(),
+        proto => binary(),
+        sport => char(),
+        src => binary()
+    }.
 parse_packet(Attrs) ->
     M = #{},
     M1 =
@@ -165,7 +175,17 @@ parse_packet(Attrs) ->
         _ -> M2
     end.
 
--spec parse_ip_packet(#{iface => non_neg_integer(), prefix => binary()}, binary()) -> #{dport => char(), dst => binary(), iface => non_neg_integer(), len => non_neg_integer(), prefix => binary(), proto => binary(), sport => char(), src => binary()}.
+-spec parse_ip_packet(#{iface => non_neg_integer(), prefix => binary()}, binary()) ->
+    #{
+        dport => char(),
+        dst => binary(),
+        iface => non_neg_integer(),
+        len => non_neg_integer(),
+        prefix => binary(),
+        proto => binary(),
+        sport => char(),
+        src => binary()
+    }.
 parse_ip_packet(
     M,
     <<4:4, IHL:4, _TOS:8, TotalLen:16/big, _ID:16, _FragOff:16, _TTL:8, Proto:8, _Checksum:16,
@@ -215,7 +235,18 @@ proto_name(?IPPROTO_ICMP) -> <<"icmp">>;
 proto_name(58) -> <<"icmpv6">>;
 proto_name(N) -> integer_to_binary(N).
 
--spec broadcast({nflog_event, #{dport => char(), dst => binary(), iface => non_neg_integer(), len => non_neg_integer(), prefix => binary(), proto => binary(), sport => char(), src => binary()}}) -> ok.
+-spec broadcast(
+    {nflog_event, #{
+        dport => char(),
+        dst => binary(),
+        iface => non_neg_integer(),
+        len => non_neg_integer(),
+        prefix => binary(),
+        proto => binary(),
+        sport => char(),
+        src => binary()
+    }}
+) -> ok.
 broadcast(Msg) ->
     try
         Members = pg:get_members(erlkoenig_nft, nflog_events),

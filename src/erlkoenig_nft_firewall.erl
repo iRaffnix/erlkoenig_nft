@@ -376,7 +376,14 @@ maybe_delete_old_table(_NewTable, _OldTable) ->
 
 %% --- Internal: Set operations (ban/unban/authorize/deauthorize) ---
 
--spec apply_set_op(map(), <<_:32, _:_*96>>, fun((map(), binary()) -> {ok, binary()} | {error, no_matching_set}), fun((binary(), binary()) -> fun((non_neg_integer()) -> <<_:64, _:_*8>>)), string(), [any()]) ->
+-spec apply_set_op(
+    map(),
+    <<_:32, _:_*96>>,
+    fun((map(), binary()) -> {ok, binary()} | {error, no_matching_set}),
+    fun((binary(), binary()) -> fun((non_neg_integer()) -> <<_:64, _:_*8>>)),
+    string(),
+    [any()]
+) ->
     ok | {error, term()}.
 apply_set_op(Config, IPBin, LookupFun, RuleFun, LogFmt, LogArgs) ->
     Table = maps:get(table, Config),
@@ -688,7 +695,9 @@ build_rule(Table, Chain, {osf_match, OsName, Verdict}, _Config) ->
     encode_rule(Table, Chain, nft_rules:osf_match(ensure_binary(OsName), Verdict));
 %% SYN proxy: filter rule for synproxy (matches ct state invalid|untracked)
 build_rule(Table, Chain, {synproxy, Port, MSS, WScale, _Flags}, _Config) ->
-    encode_rule(Table, Chain, nft_rules:synproxy_filter_rule(Port, #{mss => MSS, wscale => WScale}));
+    encode_rule(
+        Table, Chain, nft_rules:synproxy_filter_rule(Port, #{mss => MSS, wscale => WScale})
+    );
 %% FIB reverse-path filter (anti-spoofing)
 build_rule(Table, Chain, fib_rpf_drop, _Config) ->
     encode_rule(Table, Chain, nft_rules:fib_rpf_drop());
@@ -731,7 +740,17 @@ build_thresholds(CounterName, Thresholds) ->
 
 %% --- Internal: Diff live ---
 
--spec compute_diff(map()) -> [#{type := extra_chain | missing_chain | missing_set | set_elements, chain => term(), config_count => non_neg_integer(), detail => <<_:184, _:_*32>>, kernel_count => integer(), set => binary()}].
+-spec compute_diff(map()) ->
+    [
+        #{
+            type := extra_chain | missing_chain | missing_set | set_elements,
+            chain => term(),
+            config_count => non_neg_integer(),
+            detail => <<_:184, _:_*32>>,
+            kernel_count => integer(),
+            set => binary()
+        }
+    ].
 compute_diff(Config) ->
     Table = maps:get(table, Config),
     ConfigChains = [maps:get(name, C) || C <- maps:get(chains, Config, [])],
@@ -855,7 +874,8 @@ find_set_by_name([S | Rest], Name) ->
         _ -> find_set_by_name(Rest, Name)
     end.
 
--spec format_set_info({term(), term()} | {term(), term(), map()}) -> #{name := term(), type := term(), flags => term()}.
+-spec format_set_info({term(), term()} | {term(), term(), map()}) ->
+    #{name := term(), type := term(), flags => term()}.
 format_set_info({Name, Type}) ->
     #{name => Name, type => Type};
 format_set_info({Name, Type, Opts}) ->
@@ -1028,7 +1048,9 @@ normalize_vmap_entry({Key, Verdict}, ipv6_addr) ->
 normalize_vmap_entry({Key, Verdict}, _Type) when is_binary(Key) ->
     {Key, normalize_verdict(Verdict)}.
 
--spec normalize_verdict(accept | drop | {jump, atom() | binary() | string()} | {goto, atom() | binary() | string()}) -> accept | drop | {jump, binary()} | {goto, binary()}.
+-spec normalize_verdict(
+    accept | drop | {jump, atom() | binary() | string()} | {goto, atom() | binary() | string()}
+) -> accept | drop | {jump, binary()} | {goto, binary()}.
 normalize_verdict(accept) -> accept;
 normalize_verdict(drop) -> drop;
 normalize_verdict({jump, Chain}) -> {jump, ensure_binary(Chain)};
@@ -1040,7 +1062,9 @@ ensure_binary(L) when is_list(L) -> list_to_binary(L);
 ensure_binary(A) when is_atom(A) -> atom_to_binary(A).
 
 build_set_msg(Table, {SetName, concat, Extra}, Idx, Seq) ->
-    Opts = maps:merge(#{table => Table, name => SetName, id => Idx}, maps:without([elements], Extra)),
+    Opts = maps:merge(
+        #{table => Table, name => SetName, id => Idx}, maps:without([elements], Extra)
+    ),
     nft_set:add_concat(?INET, Opts, Seq);
 build_set_msg(Table, SetSpec, Idx, Seq) ->
     nft_set:add(?INET, set_opts(Table, SetSpec, Idx), Seq).
@@ -1055,7 +1079,23 @@ set_opts(Table, {SetName, SetType, Extra}, Idx) ->
 config_path() ->
     erlkoenig_nft_config:config_path().
 
--spec default_config() -> #{chains := [#{hook := forward | input | output | prerouting, name := <<_:40, _:_*8>>, policy := accept, priority := -300 | 0, rules := [any()], type := filter}, ...], counters := [banned | dropped | forward | input | output, ...], sets := [{<<_:64, _:_*8>>, ipv4_addr | ipv6_addr}, ...], table := <<_:72>>}.
+-spec default_config() ->
+    #{
+        chains := [
+            #{
+                hook := forward | input | output | prerouting,
+                name := <<_:40, _:_*8>>,
+                policy := accept,
+                priority := -300 | 0,
+                rules := [any()],
+                type := filter
+            },
+            ...
+        ],
+        counters := [banned | dropped | forward | input | output, ...],
+        sets := [{<<_:64, _:_*8>>, ipv4_addr | ipv6_addr}, ...],
+        table := <<_:72>>
+    }.
 default_config() ->
     #{
         table => <<"erlkoenig">>,

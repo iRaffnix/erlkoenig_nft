@@ -187,43 +187,73 @@ ct_mark_set(SReg) ->
 %% --- Payload convenience ---
 
 -doc "Load TCP source port (2 bytes) into register.".
--spec tcp_sport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec tcp_sport(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 tcp_sport(Reg) -> payload(transport, 0, 2, Reg).
 
 -doc "Load TCP destination port (2 bytes) into register.".
--spec tcp_dport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec tcp_dport(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 tcp_dport(Reg) -> payload(transport, 2, 2, Reg).
 
 -doc "Load UDP source port (2 bytes) into register.".
--spec udp_sport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec udp_sport(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 udp_sport(Reg) -> payload(transport, 0, 2, Reg).
 
 -doc "Load UDP destination port (2 bytes) into register.".
--spec udp_dport(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec udp_dport(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 udp_dport(Reg) -> payload(transport, 2, 2, Reg).
 
 -doc "Load IPv4 source address (4 bytes) into register.".
--spec ip_saddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec ip_saddr(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 ip_saddr(Reg) -> payload(network, 12, 4, Reg).
 
 -doc "Load IPv4 destination address (4 bytes) into register.".
--spec ip_daddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec ip_daddr(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 ip_daddr(Reg) -> payload(network, 16, 4, Reg).
 
 -doc "Load IPv4 protocol field (1 byte) into register.".
--spec ip_protocol(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec ip_protocol(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 ip_protocol(Reg) -> payload(network, 9, 1, Reg).
 
 -doc "Load IPv6 source address (16 bytes) into register.".
--spec ip6_saddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec ip6_saddr(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 ip6_saddr(Reg) -> payload(network, 8, 16, Reg).
 
 -doc "Load IPv6 destination address (16 bytes) into register.".
--spec ip6_daddr(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec ip6_daddr(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 ip6_daddr(Reg) -> payload(network, 24, 16, Reg).
 
 -doc "Load IPv6 next-header field (1 byte) into register.".
--spec ip6_next_header(non_neg_integer()) -> {payload, #{base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()}}.
+-spec ip6_next_header(non_neg_integer()) ->
+    {payload, #{
+        base := atom(), offset := non_neg_integer(), len := pos_integer(), dreg := non_neg_integer()
+    }}.
 ip6_next_header(Reg) -> payload(network, 6, 1, Reg).
 
 %% ===================================================================
@@ -236,7 +266,8 @@ cmp(Op, SReg, Data) ->
     {cmp, #{sreg => SReg, op => Op, data => Data}}.
 
 -doc "Shorthand: compare register not-equal to zero.".
--spec cmp_neq(non_neg_integer(), binary()) -> {cmp, #{sreg := non_neg_integer(), op := neq, data := binary()}}.
+-spec cmp_neq(non_neg_integer(), binary()) ->
+    {cmp, #{sreg := non_neg_integer(), op := neq, data := binary()}}.
 cmp_neq(SReg, Data) ->
     cmp(neq, SReg, Data).
 
@@ -431,7 +462,13 @@ snat(AddrReg, ProtoReg, Family) ->
         reg_proto_min => ProtoReg
     }}.
 
--spec snat(non_neg_integer(), non_neg_integer()) -> {nat, #{type := snat, family := non_neg_integer(), reg_addr_min := non_neg_integer(), reg_proto_min := non_neg_integer()}}.
+-spec snat(non_neg_integer(), non_neg_integer()) ->
+    {nat, #{
+        type := snat,
+        family := non_neg_integer(),
+        reg_addr_min := non_neg_integer(),
+        reg_proto_min := non_neg_integer()
+    }}.
 snat(AddrReg, ProtoReg) ->
     snat(AddrReg, ProtoReg, 2).
 
@@ -445,7 +482,13 @@ dnat(AddrReg, ProtoReg, Family) ->
         reg_proto_min => ProtoReg
     }}.
 
--spec dnat(non_neg_integer(), non_neg_integer()) -> {nat, #{type := dnat, family := non_neg_integer(), reg_addr_min := non_neg_integer(), reg_proto_min := non_neg_integer()}}.
+-spec dnat(non_neg_integer(), non_neg_integer()) ->
+    {nat, #{
+        type := dnat,
+        family := non_neg_integer(),
+        reg_addr_min := non_neg_integer(),
+        reg_proto_min := non_neg_integer()
+    }}.
 dnat(AddrReg, ProtoReg) ->
     dnat(AddrReg, ProtoReg, 2).
 
@@ -558,7 +601,13 @@ Returns a list of expressions suitable for use as a rule.
 
 Flags: SADDR(1) | IIF(8) = 9.  Result: OIF = 1.
 """.
--spec fib_rpf() -> [{fib, #{result := non_neg_integer(), flags := non_neg_integer(), dreg := non_neg_integer()}} | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}} | {immediate, #{verdict := drop}}, ...].
+-spec fib_rpf() ->
+    [
+        {fib, #{result := non_neg_integer(), flags := non_neg_integer(), dreg := non_neg_integer()}}
+        | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}}
+        | {immediate, #{verdict := drop}},
+        ...
+    ].
 fib_rpf() ->
     [
         fib(1, 9, 1),
@@ -656,7 +705,12 @@ osf(DReg) ->
     {osf, #{dreg => DReg}}.
 
 -doc "Load OS fingerprint into a register and compare against a name string.".
--spec osf_match(non_neg_integer(), binary()) -> [{osf, #{dreg := non_neg_integer()}} | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}}, ...].
+-spec osf_match(non_neg_integer(), binary()) ->
+    [
+        {osf, #{dreg := non_neg_integer()}}
+        | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}},
+        ...
+    ].
 osf_match(DReg, OsName) when is_binary(OsName) ->
     [osf(DReg), cmp(eq, DReg, OsName)].
 
@@ -674,7 +728,19 @@ Build a rule fragment for flow offload: offload established connections
 to the named flowtable. Returns a list of expressions suitable for
 appending to a rule (ct state established + flow add @FlowtableName).
 """.
--spec flow_offload(binary()) -> [{ct, #{key := atom(), dreg := non_neg_integer()}} | {bitwise, #{sreg := non_neg_integer(), dreg := non_neg_integer(), mask := binary(), xor_val := binary()}} | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}} | {offload, #{table_name := binary()}}, ...].
+-spec flow_offload(binary()) ->
+    [
+        {ct, #{key := atom(), dreg := non_neg_integer()}}
+        | {bitwise, #{
+            sreg := non_neg_integer(),
+            dreg := non_neg_integer(),
+            mask := binary(),
+            xor_val := binary()
+        }}
+        | {cmp, #{sreg := non_neg_integer(), op := atom(), data := binary()}}
+        | {offload, #{table_name := binary()}},
+        ...
+    ].
 flow_offload(FlowtableName) ->
     CT_ESTABLISHED = 16#02,
     [

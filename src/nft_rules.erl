@@ -781,7 +781,9 @@ Build a synproxy filter rule for a single TCP port.
 Matches ct state invalid|untracked + TCP dport, then applies synproxy.
 Use with a corresponding notrack_rule/2 in the raw chain.
 """.
--spec synproxy_filter_rule(0..65535, #{mss := non_neg_integer(), wscale := non_neg_integer(), _ => _}) -> [nft_expr_ir:expr(), ...].
+-spec synproxy_filter_rule(0..65535, #{
+    mss := non_neg_integer(), wscale := non_neg_integer(), _ => _
+}) -> [nft_expr_ir:expr(), ...].
 synproxy_filter_rule(Port, Opts) ->
     nft_expr_ir:synproxy_filter_rule(Port, Opts).
 
@@ -942,7 +944,21 @@ Example:
     %% ip saddr . tcp dport { 10.0.0.1 . 22 }
     concat_set_lookup(<<"allowpairs">>, [ip_saddr, tcp_dport], accept)
 """.
--spec concat_set_lookup(binary(), [ip_saddr | ip_daddr | ip6_saddr | ip6_daddr | tcp_sport | tcp_dport | udp_sport | udp_dport | ip_protocol], accept | drop) -> [nft_expr_ir:expr(), ...].
+-spec concat_set_lookup(
+    binary(),
+    [
+        ip_saddr
+        | ip_daddr
+        | ip6_saddr
+        | ip6_daddr
+        | tcp_sport
+        | tcp_dport
+        | udp_sport
+        | udp_dport
+        | ip_protocol
+    ],
+    accept | drop
+) -> [nft_expr_ir:expr(), ...].
 concat_set_lookup(SetName, Fields, Verdict) ->
     KeyExprs = [field_to_expr(F) || F <- Fields],
     nft_expr_ir:concat_lookup(SetName, KeyExprs, Verdict).
@@ -953,12 +969,41 @@ Drop if the concatenated key matches an entry in the named set.
 Example:
     concat_set_lookup_drop(<<"denylist">>, [ip_saddr, tcp_dport])
 """.
--spec concat_set_lookup_drop(binary(), [ip_saddr | ip_daddr | ip6_saddr | ip6_daddr | tcp_sport | tcp_dport | udp_sport | udp_dport | ip_protocol]) -> [nft_expr_ir:expr(), ...].
+-spec concat_set_lookup_drop(binary(), [
+    ip_saddr
+    | ip_daddr
+    | ip6_saddr
+    | ip6_daddr
+    | tcp_sport
+    | tcp_dport
+    | udp_sport
+    | udp_dport
+    | ip_protocol
+]) -> [nft_expr_ir:expr(), ...].
 concat_set_lookup_drop(SetName, Fields) ->
     concat_set_lookup(SetName, Fields, drop).
 
 %% Map symbolic field names to {IR_expression, byte_length} tuples.
--spec field_to_expr(ip_saddr | ip_daddr | ip6_saddr | ip6_daddr | tcp_sport | tcp_dport | udp_sport | udp_dport | ip_protocol) -> {{payload, #{base := atom(), dreg := non_neg_integer(), len := pos_integer(), offset := non_neg_integer()}}, 1 | 2 | 4 | 16}.
+-spec field_to_expr(
+    ip_saddr
+    | ip_daddr
+    | ip6_saddr
+    | ip6_daddr
+    | tcp_sport
+    | tcp_dport
+    | udp_sport
+    | udp_dport
+    | ip_protocol
+) ->
+    {
+        {payload, #{
+            base := atom(),
+            dreg := non_neg_integer(),
+            len := pos_integer(),
+            offset := non_neg_integer()
+        }},
+        1 | 2 | 4 | 16
+    }.
 field_to_expr(ip_saddr) -> {nft_expr_ir:ip_saddr(?REG1), 4};
 field_to_expr(ip_daddr) -> {nft_expr_ir:ip_daddr(?REG1), 4};
 field_to_expr(ip6_saddr) -> {nft_expr_ir:ip6_saddr(?REG1), 16};

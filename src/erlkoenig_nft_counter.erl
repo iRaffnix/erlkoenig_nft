@@ -208,7 +208,20 @@ terminate(_Reason, #{timer_ref := Ref}) ->
 
 %% --- Internal ---
 
--spec broadcast({counter_event, binary(), #{bps := float(), bytes := number(), history := [any()], interval := number(), name := binary(), packets := number(), pps := float(), total_bytes := number(), total_packets := number()}} | {threshold_event, term(), binary(), term(), number(), number()}) -> ok.
+-spec broadcast(
+    {counter_event, binary(), #{
+        bps := float(),
+        bytes := number(),
+        history := [any()],
+        interval := number(),
+        name := binary(),
+        packets := number(),
+        pps := float(),
+        total_bytes := number(),
+        total_packets := number()
+    }}
+    | {threshold_event, term(), binary(), term(), number(), number()}
+) -> ok.
 broadcast(Msg) ->
     try
         Members = pg:get_members(erlkoenig_nft, counter_events),

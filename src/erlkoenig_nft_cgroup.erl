@@ -49,11 +49,12 @@ Example:
     {ok, Id} = erlkoenig_nft_cgroup:service_id(<<"postgresql">>).
 """.
 -spec service_id(string() | binary()) ->
-    {ok, non_neg_integer()} |
-    {error, {empty_cgroup_id, binary() | string()} |
-            {bad_cgroup_id, string(), binary() | string()} |
-            {read_failed, atom(), binary() | string()} |
-            {service_not_found, string(), binary() | string()}}.
+    {ok, non_neg_integer()}
+    | {error,
+        {empty_cgroup_id, binary() | string()}
+        | {bad_cgroup_id, string(), binary() | string()}
+        | {read_failed, atom(), binary() | string()}
+        | {service_not_found, string(), binary() | string()}}.
 service_id(Service) ->
     service_id(Service, "system.slice").
 
@@ -64,11 +65,12 @@ Example:
     {ok, Id} = erlkoenig_nft_cgroup:service_id("myapp", "user.slice").
 """.
 -spec service_id(string() | binary(), string() | binary()) ->
-    {ok, non_neg_integer()} |
-    {error, {empty_cgroup_id, binary() | string()} |
-            {bad_cgroup_id, string(), binary() | string()} |
-            {read_failed, atom(), binary() | string()} |
-            {service_not_found, string(), binary() | string()}}.
+    {ok, non_neg_integer()}
+    | {error,
+        {empty_cgroup_id, binary() | string()}
+        | {bad_cgroup_id, string(), binary() | string()}
+        | {read_failed, atom(), binary() | string()}
+        | {service_not_found, string(), binary() | string()}}.
 service_id(Service, Slice) ->
     ServiceStr = ensure_service_suffix(to_list(Service)),
     SliceStr = to_list(Slice),

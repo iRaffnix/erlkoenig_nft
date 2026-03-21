@@ -256,7 +256,17 @@ terminate(_Reason, #{socket := Sock, timer_ref := Ref}) ->
 
 %% --- Internal ---
 
--spec broadcast({counter_event, binary(), #{bps := float(), bytes := non_neg_integer(), interval := number(), name := binary(), packets := non_neg_integer(), pps := float()}} | {threshold_event, term(), term(), number(), number()}) -> ok.
+-spec broadcast(
+    {counter_event, binary(), #{
+        bps := float(),
+        bytes := non_neg_integer(),
+        interval := number(),
+        name := binary(),
+        packets := non_neg_integer(),
+        pps := float()
+    }}
+    | {threshold_event, term(), term(), number(), number()}
+) -> ok.
 broadcast(Msg) ->
     try
         Members = pg:get_members(erlkoenig_nft, counter_events),

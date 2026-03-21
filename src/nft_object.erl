@@ -90,7 +90,8 @@ Read a named counter's current values without resetting.
 Returns {ok, #{packets => N, bytes => N}} or {error, Reason}.
 """.
 -spec get_counter(socket:socket(), 0..255, binary(), binary()) ->
-    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}} | {error, atom()}.
+    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}}
+    | {error, atom()}.
 get_counter(Sock, Family, Table, Name) ->
     query_counter(Sock, ?NFT_MSG_GETOBJ, Family, Table, Name).
 
@@ -101,7 +102,8 @@ This is the ideal primitive for rate calculation: you get the
 exact count since the last reset, with no race conditions.
 """.
 -spec get_counter_reset(socket:socket(), 0..255, binary(), binary()) ->
-    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}} | {error, atom()}.
+    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}}
+    | {error, atom()}.
 get_counter_reset(Sock, Family, Table, Name) ->
     query_counter(Sock, ?NFT_MSG_GETOBJ_RESET, Family, Table, Name).
 
@@ -168,7 +170,9 @@ query_counter(Sock, MsgType, Family, Table, Name) ->
         {error, _} = Err -> Err
     end.
 
--spec parse_obj_response(binary()) -> {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}} | {error, unexpected_subsystem | invalid_response}.
+-spec parse_obj_response(binary()) ->
+    {ok, #{bytes => non_neg_integer(), name => binary(), packets => non_neg_integer()}}
+    | {error, unexpected_subsystem | invalid_response}.
 parse_obj_response(
     <<Len:32/little, Type:16/little, _Flags:16/little, _Seq:32/little, _Pid:32/little, Rest/binary>>
 ) when

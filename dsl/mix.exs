@@ -4,7 +4,7 @@ defmodule ErlkoenigNft.DSL.MixProject do
   def project do
     [
       app: :erlkoenig_nft_dsl,
-      version: "0.6.0",
+      version: "0.7.0",
       elixir: "~> 1.18",
       deps: deps(),
       escript: escript()

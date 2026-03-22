@@ -1,10 +1,6 @@
-#{table => <<"test">>,
-  counters => [<<"ssh">>, <<"http">>],
-  chains => [
-    #{name => <<"input">>, priority => 0, type => filter, hook => input,
-      policy => drop,
-      rules => [
-        {tcp_accept, 22, <<"ssh">>},
-        {tcp_accept, 80, <<"http">>}
-      ]}
-  ]}.
+#{counters => [<<"ssh">>,<<"http">>],
+  table => <<"test">>,
+  chains =>
+      [#{name => <<"input">>,priority => 0,type => filter,hook => input,
+         policy => drop,
+         rules => [{tcp_accept,22,<<"ssh">>},{tcp_accept,80,<<"http">>}]}]}.

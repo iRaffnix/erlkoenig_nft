@@ -1,12 +1,10 @@
 #{table => <<"test">>,
-  chains => [
-    #{name => <<"input">>, priority => 0, type => filter, hook => input,
-      policy => drop,
-      rules => [
-        ct_established_accept,
-        {tcp_accept, 22},
-        icmp_accept,
-        {protocol_accept, icmpv6},
-        {tcp_reject, 23}
-      ]}
-  ]}.
+  chains =>
+      [#{name => <<"input">>,priority => 0,type => filter,hook => input,
+         policy => drop,
+         rules =>
+             [ct_established_accept,
+              {tcp_accept,22},
+              icmp_accept,
+              {protocol_accept,icmpv6},
+              {tcp_reject,23}]}]}.

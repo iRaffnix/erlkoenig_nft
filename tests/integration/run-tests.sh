@@ -179,17 +179,71 @@ run_one_test() {
     sanitize "$ref_json" > "$ref_san" 2>/dev/null
     sanitize "$ours_json" > "$ours_san" 2>/dev/null
 
-    # Compare
+    # Compare kernel output
     if diff -q "$ref_san" "$ours_san" >/dev/null 2>&1; then
-        echo "  PASS: $name"
-        return 0
+        echo "  PASS: $name (kernel)"
     else
-        echo "  FAIL: $name (DIFF)"
+        echo "  FAIL: $name (kernel DIFF)"
         if [ "$VERBOSE" = "1" ]; then
             diff --unified "$ref_san" "$ours_san" | head -40
         fi
         return 1
     fi
+
+    # DSL verification: if .exs exists, compile it and compare with checked-in .term
+    local exs_file="${base}.exs"
+    if [ -f "$exs_file" ]; then
+        local dsl_compiled="$TMPDIR_BASE/dsl_compiled.term"
+        local dsl_cli="$ERTS_BIN/escript"
+
+        # Find the DSL escript
+        local dsl_escript=""
+        for candidate in \
+            "$ROOTDIR/bin/erlkoenig-dsl" \
+            "$ROOTDIR/bin/erlkoenig" \
+            "$SCRIPT_DIR/../../dsl/erlkoenig"; do
+            if [ -x "$candidate" ]; then
+                dsl_escript="$candidate"
+                break
+            fi
+        done
+
+        if [ -z "$dsl_escript" ]; then
+            echo "  SKIP: $name (dsl) — no DSL escript found"
+        else
+            # Compile .exs to temp .term
+            local exs_copy="$TMPDIR_BASE/test_dsl.exs"
+            cp "$exs_file" "$exs_copy"
+            if "$dsl_escript" compile "$exs_copy" >/dev/null 2>&1; then
+                local compiled_term="$TMPDIR_BASE/test_dsl.term"
+                if [ -f "$compiled_term" ]; then
+                    # Normalize whitespace for comparison (erlang term formatting may differ)
+                    local norm_compiled="$TMPDIR_BASE/norm_compiled"
+                    local norm_reference="$TMPDIR_BASE/norm_reference"
+                    tr -s '[:space:]' ' ' < "$compiled_term" > "$norm_compiled"
+                    tr -s '[:space:]' ' ' < "$term_file" > "$norm_reference"
+
+                    if diff -q "$norm_compiled" "$norm_reference" >/dev/null 2>&1; then
+                        echo "  PASS: $name (dsl)"
+                    else
+                        echo "  FAIL: $name (dsl DIFF — .exs compiled .term differs from checked-in .term)"
+                        if [ "$VERBOSE" = "1" ]; then
+                            diff --unified "$term_file" "$compiled_term" | head -20
+                        fi
+                        return 1
+                    fi
+                else
+                    echo "  FAIL: $name (dsl — compile produced no output)"
+                    return 1
+                fi
+            else
+                echo "  FAIL: $name (dsl — compile failed)"
+                return 1
+            fi
+        fi
+    fi
+
+    return 0
 }
 
 # ── Main ────────────────────────────────────────────────────────

@@ -231,8 +231,10 @@ terminate(_Reason, _State) ->
 
 -spec otel_sdk_loaded() -> boolean().
 otel_sdk_loaded() ->
-    case code:ensure_loaded(opentelemetry) of
-        {module, opentelemetry} -> true;
+    %% The opentelemetry_api package also has an `opentelemetry` module,
+    %% so we check for a module that only exists in the SDK.
+    case code:ensure_loaded(otel_batch_processor) of
+        {module, otel_batch_processor} -> true;
         _ -> false
     end.
 

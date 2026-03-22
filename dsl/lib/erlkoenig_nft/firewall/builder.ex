@@ -176,7 +176,7 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def set_lookup_drop(set_name), do: {:set_lookup_drop, set_name}
   def set_lookup_drop(set_name, counter), do: {:set_lookup_drop, set_name, to_string(counter)}
 
-  def connlimit_drop(max), do: {:connlimit_drop, max, 0}
+  def connlimit_drop(max), do: {:connlimit_drop, max, 1}
   def connlimit_drop(max, offset), do: {:connlimit_drop, max, offset}
 
   def log_drop(prefix), do: {:log_drop, prefix}

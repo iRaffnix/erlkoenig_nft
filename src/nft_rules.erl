@@ -542,8 +542,8 @@ log_drop(Prefix) ->
 -spec log_drop_named(binary(), binary()) -> rule().
 log_drop_named(Prefix, CounterName) ->
     [
-        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:log(#{prefix => Prefix}),
+        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:drop()
     ].
 
@@ -923,6 +923,18 @@ Loads the ct mark into a register and compares it against Value.
 Verdict is typically accept() or drop().
 """.
 -spec ct_mark_match(non_neg_integer(), nft_expr_ir:expr()) -> rule().
+ct_mark_match(Value, accept) ->
+    [
+        nft_expr_ir:ct_mark(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
+        nft_expr_ir:accept()
+    ];
+ct_mark_match(Value, drop) ->
+    [
+        nft_expr_ir:ct_mark(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
+        nft_expr_ir:drop()
+    ];
 ct_mark_match(Value, Verdict) ->
     [
         nft_expr_ir:ct_mark(?REG1),

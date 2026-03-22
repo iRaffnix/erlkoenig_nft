@@ -1,0 +1,5 @@
+#{table => <<"test">>,
+  chains =>
+      [#{name => <<"postrouting">>,priority => 0,type => nat,
+         hook => postrouting,policy => accept,
+         rules => [{oifname_neq_masq,<<"lo">>}]}]}.

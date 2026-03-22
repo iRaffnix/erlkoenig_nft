@@ -551,8 +551,8 @@ log_drop_named(Prefix, CounterName) ->
 -spec log_drop_nflog(binary(), non_neg_integer(), binary()) -> rule().
 log_drop_nflog(Prefix, Group, CounterName) ->
     [
-        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:log(#{prefix => Prefix, group => Group}),
+        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:drop()
     ].
 

@@ -430,10 +430,12 @@ jump(Chain) ->
 goto(Chain) ->
     {immediate, #{verdict => {goto, Chain}}}.
 
--doc "Drop and send ICMP unreachable.".
--spec reject() -> {reject, #{type := 0, icmp_code := 3}}.
+-doc "Drop and send ICMPx port-unreachable (family-independent, for inet tables).".
+-spec reject() -> {reject, #{type := 2, icmp_code := 1}}.
 reject() ->
-    {reject, #{type => 0, icmp_code => 3}}.
+    %% type=2 = NFT_REJECT_ICMPX_UNREACH (family-independent)
+    %% icmpx codes: 0=no-route, 1=port-unreachable, 2=host-unreachable, 3=admin-prohibited
+    {reject, #{type => 2, icmp_code => 1}}.
 
 -doc "Reject with explicit type and ICMP code.".
 -spec reject(non_neg_integer(), non_neg_integer()) -> expr().

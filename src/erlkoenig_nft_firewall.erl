@@ -688,6 +688,12 @@ build_rule(Table, Chain, {tcp_dnat, MatchPort, DstIp, DstPort}, _Config) ->
 build_rule(Table, Chain, {snat, IP, Port}, _Config) ->
     {ok, Bin} = erlkoenig_nft_ip:normalize(IP),
     encode_rule(Table, Chain, nft_rules:snat_rule(Bin, Port));
+%% Conntrack mark: set ct mark on matching packets
+build_rule(Table, Chain, {ct_mark_set, Value}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:ct_mark_set(Value));
+%% Conntrack mark: match ct mark and apply verdict
+build_rule(Table, Chain, {ct_mark_match, Value, Verdict}, _Config) ->
+    encode_rule(Table, Chain, nft_rules:ct_mark_match(Value, Verdict));
 %% Notrack: skip conntrack for specific port/proto (used in raw chains)
 build_rule(Table, Chain, {notrack, Port, Proto}, _Config) ->
     encode_rule(Table, Chain, nft_rules:notrack_rule(Port, Proto));

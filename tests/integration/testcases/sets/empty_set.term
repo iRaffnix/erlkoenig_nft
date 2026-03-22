@@ -1,0 +1,6 @@
+#{table => <<"test">>,
+  sets => [{<<"blocklist">>,ipv4_addr}],
+  chains =>
+      [#{name => <<"input">>,priority => 0,type => filter,hook => input,
+         policy => drop,
+         rules => [{set_lookup_drop,<<"blocklist">>}]}]}.

@@ -176,7 +176,7 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def set_lookup_drop(set_name), do: {:set_lookup_drop, set_name}
   def set_lookup_drop(set_name, counter), do: {:set_lookup_drop, set_name, to_string(counter)}
 
-  def connlimit_drop(max), do: {:connlimit_drop, max, 0}
+  def connlimit_drop(max), do: {:connlimit_drop, max, 1}
   def connlimit_drop(max, offset), do: {:connlimit_drop, max, offset}
 
   def log_drop(prefix), do: {:log_drop, prefix}
@@ -213,6 +213,8 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def osf_match(os_name, verdict), do: {:osf_match, os_name, verdict}
 
   def dnat(ip, port), do: {:dnat, ip, port}
+  def tcp_dnat(match_port, dst_ip, dst_port), do: {:tcp_dnat, match_port, dst_ip, dst_port}
+  def snat(ip, port), do: {:snat, ip, port}
 
   def vmap_dispatch(proto, vmap_name) when proto in [:tcp, :udp] and is_binary(vmap_name) do
     {:vmap_dispatch, proto, vmap_name}
@@ -268,6 +270,20 @@ defmodule ErlkoenigNft.Firewall.Builder do
   def push_rule(state, rule) do
     update_in(state, [:rules_acc], &(&1 ++ [rule]))
   end
+
+  @doc "Push a rule and auto-register any counter it references."
+  def push_rule_with_counter(state, rule) do
+    state = push_rule(state, rule)
+    case extract_counter(rule) do
+      nil -> state
+      name ->
+        if name in state.counters, do: state, else: add_counters(state, [name])
+    end
+  end
+
+  defp extract_counter({_, _, counter, _}) when is_binary(counter), do: counter
+  defp extract_counter({_, _, counter}) when is_binary(counter), do: counter
+  defp extract_counter(_), do: nil
 
   def take_rules(state) do
     {state.rules_acc, %{state | rules_acc: []}}

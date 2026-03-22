@@ -1,0 +1,13 @@
+#{table => <<"test">>,
+  chains => [
+    #{name => <<"input">>, priority => 0, type => filter, hook => input,
+      policy => drop,
+      rules => [
+        ct_established_accept,
+        {jump, <<"ssh_chain">>}
+      ]},
+    #{name => <<"ssh_chain">>,
+      rules => [
+        {tcp_accept, 22}
+      ]}
+  ]}.

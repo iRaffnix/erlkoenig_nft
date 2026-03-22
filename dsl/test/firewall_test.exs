@@ -64,7 +64,7 @@ defmodule ErlkoenigNft.FirewallTest do
       assert Builder.log_drop("X: ") == {:log_drop, "X: "}
       assert Builder.log_reject("R: ") == {:log_reject, "R: "}
       assert Builder.set_lookup_drop("bl") == {:set_lookup_drop, "bl"}
-      assert Builder.connlimit_drop(100) == {:connlimit_drop, 100, 0}
+      assert Builder.connlimit_drop(100) == {:connlimit_drop, 100, 1}
       assert Builder.dnat({10, 0, 0, 1}, 80) == {:dnat, {10, 0, 0, 1}, 80}
       assert Builder.nflog_capture_udp(61820, "LOG:", 0) == {:nflog_capture_udp, 61820, "LOG:", 0}
       assert Builder.set_lookup_udp_accept("allowlist", 51820) == {:set_lookup_udp_accept, "allowlist", 51820}

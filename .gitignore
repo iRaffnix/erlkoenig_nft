@@ -38,3 +38,4 @@ logs/
 # Internal
 .claude/
 idoc/
+CLAUDE.md

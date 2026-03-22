@@ -1,0 +1,11 @@
+# Prometheus configuration for erlkoenig_nft tutorial
+#
+# Metrics arrive via remote write from the OTel Collector.
+# No scrape targets needed — the collector pushes to us.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Remote write receiver is enabled via --web.enable-remote-write-receiver
+# command line flag in docker-compose.yml

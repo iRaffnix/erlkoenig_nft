@@ -14,10 +14,8 @@ Group=erlkoenig
 Environment=ERL_EPMD_ADDRESS=127.0.0.1
 Environment=ERL_EPMD_PORT=4369
 
-## Start: export cookie, then exec into release wrapper
-ExecStart=/bin/sh -ec '\
-    export RELX_COOKIE="$$(cat /opt/erlkoenig_nft/cookie)"; \
-    exec /opt/erlkoenig_nft/bin/erlkoenig_nft foreground'
+## Start: env.sh in the release handles cookie loading automatically
+ExecStart=/opt/erlkoenig_nft/bin/erlkoenig_nft foreground
 
 ## Graceful shutdown
 KillSignal=SIGTERM

@@ -167,7 +167,8 @@ defmodule ErlkoenigNft.Firewall do
 
   defmacro accept_tcp(port, opts) do
     quote do
-      @fw_builder Builder.push_rule(@fw_builder, Builder.tcp_accept(unquote(port), unquote(opts)))
+      @fw_builder Builder.push_rule_with_counter(@fw_builder,
+        Builder.tcp_accept(unquote(port), unquote(opts)))
     end
   end
 
@@ -177,7 +178,8 @@ defmodule ErlkoenigNft.Firewall do
 
   defmacro accept_udp(port, opts) do
     quote do
-      @fw_builder Builder.push_rule(@fw_builder, Builder.udp_accept(unquote(port), unquote(opts)))
+      @fw_builder Builder.push_rule_with_counter(@fw_builder,
+        Builder.udp_accept(unquote(port), unquote(opts)))
     end
   end
 
@@ -277,6 +279,24 @@ defmodule ErlkoenigNft.Firewall do
 
   defmacro accept_forward_established do
     quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.forward_established())
+  end
+
+  # --- NAT: DNAT ---
+
+  @doc "DNAT: redirect incoming TCP traffic on match_port to dst_ip:dst_port"
+  defmacro dnat(match_port, dst_ip, dst_port) do
+    quote do
+      @fw_builder Builder.push_rule(@fw_builder,
+        Builder.tcp_dnat(unquote(match_port), unquote(dst_ip), unquote(dst_port)))
+    end
+  end
+
+  @doc "SNAT: rewrite source address to ip:port (static source NAT)"
+  defmacro snat(ip, port) do
+    quote do
+      @fw_builder Builder.push_rule(@fw_builder,
+        Builder.snat(unquote(ip), unquote(port)))
+    end
   end
 
   # --- Zone definitions ---

@@ -1,0 +1,5 @@
+#{table => <<"test">>,
+  chains =>
+      [#{name => <<"input">>,priority => 0,type => filter,hook => input,
+         policy => accept,
+         rules => [{ct_mark_set,1}]}]}.

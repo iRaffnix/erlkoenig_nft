@@ -72,6 +72,7 @@ wrap each rule separately:
     masq_rule/0,
     oifname_neq_masq/1,
     dnat_rule/2,
+    snat_rule/2,
     tcp_dnat/3,
     %% Per-source-IP rate limiting (meters)
     meter_limit/4,
@@ -307,8 +308,8 @@ tcp_reject(Port) ->
         nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
         nft_expr_ir:tcp_dport(?REG1),
         nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-        %% type=2 (tcp reset), code ignored
-        nft_expr_ir:reject(2, 0)
+        %% type=1 = NFT_REJECT_TCP_RST, code ignored for TCP RST
+        nft_expr_ir:reject(1, 0)
     ].
 
 -doc "Accept UDP traffic on the given port.".
@@ -541,8 +542,8 @@ log_drop(Prefix) ->
 -spec log_drop_named(binary(), binary()) -> rule().
 log_drop_named(Prefix, CounterName) ->
     [
-        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:log(#{prefix => Prefix}),
+        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:drop()
     ].
 
@@ -550,8 +551,8 @@ log_drop_named(Prefix, CounterName) ->
 -spec log_drop_nflog(binary(), non_neg_integer(), binary()) -> rule().
 log_drop_nflog(Prefix, Group, CounterName) ->
     [
-        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:log(#{prefix => Prefix, group => Group}),
+        nft_expr_ir:objref_counter(CounterName),
         nft_expr_ir:drop()
     ].
 
@@ -590,6 +591,23 @@ dnat_rule(IP, Port) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
         nft_expr_ir:immediate_data(?REG1, IP),
         nft_expr_ir:immediate_data(?REG2, <<Port:16/big>>),
         nft_expr_ir:dnat(?REG1, ?REG2, Family)
+    ].
+
+-doc "SNAT: rewrite source address (and optionally port).".
+-spec snat_rule(binary(), 0..65535) -> rule().
+snat_rule(IP, 0) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
+    %% Port 0 = address-only SNAT (no port rewrite)
+    Family = ip_family(IP),
+    [
+        nft_expr_ir:immediate_data(?REG1, IP),
+        nft_expr_ir:snat_addr(?REG1, Family)
+    ];
+snat_rule(IP, Port) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
+    Family = ip_family(IP),
+    [
+        nft_expr_ir:immediate_data(?REG1, IP),
+        nft_expr_ir:immediate_data(?REG2, <<Port:16/big>>),
+        nft_expr_ir:snat(?REG1, ?REG2, Family)
     ].
 
 -doc "DNAT TCP traffic on MatchPort to DstIp:DstPort.".
@@ -905,6 +923,18 @@ Loads the ct mark into a register and compares it against Value.
 Verdict is typically accept() or drop().
 """.
 -spec ct_mark_match(non_neg_integer(), nft_expr_ir:expr()) -> rule().
+ct_mark_match(Value, accept) ->
+    [
+        nft_expr_ir:ct_mark(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
+        nft_expr_ir:accept()
+    ];
+ct_mark_match(Value, drop) ->
+    [
+        nft_expr_ir:ct_mark(?REG1),
+        nft_expr_ir:cmp(eq, ?REG1, <<Value:32/native>>),
+        nft_expr_ir:drop()
+    ];
 ct_mark_match(Value, Verdict) ->
     [
         nft_expr_ir:ct_mark(?REG1),

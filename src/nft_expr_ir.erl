@@ -93,6 +93,7 @@ Example:
     immediate_data/2,
     %% NAT / Masquerade / Redirect
     snat/2, snat/3,
+    snat_addr/2,
     dnat/2, dnat/3,
     masq/0, masq/2,
     redir/1,
@@ -430,10 +431,12 @@ jump(Chain) ->
 goto(Chain) ->
     {immediate, #{verdict => {goto, Chain}}}.
 
--doc "Drop and send ICMP unreachable.".
--spec reject() -> {reject, #{type := 0, icmp_code := 3}}.
+-doc "Drop and send ICMPx port-unreachable (family-independent, for inet tables).".
+-spec reject() -> {reject, #{type := 2, icmp_code := 1}}.
 reject() ->
-    {reject, #{type => 0, icmp_code => 3}}.
+    %% type=2 = NFT_REJECT_ICMPX_UNREACH (family-independent)
+    %% icmpx codes: 0=no-route, 1=port-unreachable, 2=host-unreachable, 3=admin-prohibited
+    {reject, #{type => 2, icmp_code => 1}}.
 
 -doc "Reject with explicit type and ICMP code.".
 -spec reject(non_neg_integer(), non_neg_integer()) -> expr().
@@ -471,6 +474,15 @@ snat(AddrReg, ProtoReg, Family) ->
     }}.
 snat(AddrReg, ProtoReg) ->
     snat(AddrReg, ProtoReg, 2).
+
+-doc "Source NAT address-only (no port rewrite).".
+-spec snat_addr(non_neg_integer(), non_neg_integer()) -> expr().
+snat_addr(AddrReg, Family) ->
+    {nat, #{
+        type => snat,
+        family => Family,
+        reg_addr_min => AddrReg
+    }}.
 
 -doc "Destination NAT. Rewrite destination address/port.".
 -spec dnat(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> expr().

@@ -1,0 +1,65 @@
+# OpenTelemetry Collector configuration for erlkoenig_nft
+#
+# Receives OTLP over HTTP from erlkoenig_nft and fans out to:
+#   - Prometheus (metrics)
+#   - Tempo (traces)
+#   - Loki (logs)
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+  resource:
+    attributes:
+      - key: service.namespace
+        value: erlkoenig
+        action: upsert
+
+exporters:
+  # Metrics -> Prometheus via remote write
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Traces -> Tempo via OTLP gRPC
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Logs -> Loki
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+
+  # Debug output (disable in production)
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [prometheusremotewrite, debug]
+
+    traces:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [otlp/tempo, debug]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [loki, debug]
+
+  telemetry:
+    logs:
+      level: info

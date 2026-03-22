@@ -152,8 +152,8 @@ ir_drop(_) ->
 ir_reject(_) ->
     Term = nft_expr_ir:reject(),
     {<<"reject">>, Attrs} = encode_decode(Term),
-    %% type=0
-    ?assertMatch({1, <<0:32/big>>}, lists:keyfind(1, 1, Attrs)).
+    %% type=2 (NFT_REJECT_ICMPX_UNREACH, family-independent)
+    ?assertMatch({1, <<2:32/big>>}, lists:keyfind(1, 1, Attrs)).
 
 ir_immediate_data(_) ->
     Term = nft_expr_ir:immediate_data(?REG1, <<10, 0, 0, 1>>),

@@ -92,7 +92,8 @@ Example:
     reject/0, reject/2,
     immediate_data/2,
     %% NAT / Masquerade / Redirect
-    snat/2, snat/3, snat_addr/2,
+    snat/2, snat/3,
+    snat_addr/2,
     dnat/2, dnat/3,
     masq/0, masq/2,
     redir/1,

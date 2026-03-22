@@ -19,6 +19,7 @@ LOCAL_DIR=""
 INSTALL_SYSTEMD=true
 FORCE=false
 BIND_IP=""
+OTEL_ENDPOINT=""
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ usage() {
     echo "  --bind IP           Bind distribution/epmd to this IP (default: auto-detect)"
     echo "                      Auto-detection: first 10.x.x.x on a non-loopback interface"
     echo "                      Falls back to 127.0.0.1 (single-node) if no private IP found"
+    echo "  --otel-endpoint URL Enable OpenTelemetry export to OTLP collector (e.g., http://localhost:4318)"
     echo "  --no-systemd        Skip systemd unit installation"
     echo "  --force             Force reinstall even if same version"
     echo "  --help              Show this help"
@@ -46,6 +48,7 @@ usage() {
     echo "Examples:"
     echo "  sudo sh install.sh --version v0.6.0"
     echo "  sudo sh install.sh --version v0.6.0 --bind 10.0.0.1"
+    echo "  sudo sh install.sh --version v0.6.0 --otel-endpoint http://collector:4318"
     echo "  sudo sh install.sh --local /tmp/artifacts"
     exit 0
 }
@@ -56,6 +59,7 @@ while [ $# -gt 0 ]; do
         --local)       LOCAL_DIR="$2"; shift 2 ;;
         --prefix)      PREFIX="$2"; shift 2 ;;
         --bind)        BIND_IP="$2"; shift 2 ;;
+        --otel-endpoint) OTEL_ENDPOINT="$2"; shift 2 ;;
         --no-systemd)  INSTALL_SYSTEMD=false; shift ;;
         --force)       FORCE=true; shift ;;
         --help|-h)     usage ;;
@@ -463,6 +467,18 @@ if [ -f "$PREFIX/dist/erlkoenig_nft.service" ]; then
     ok "systemd unit: ERL_EPMD_ADDRESS -> $RESOLVED_IP"
 fi
 
+# ── Configure OpenTelemetry export ──────────────────────
+
+if [ -n "$OTEL_ENDPOINT" ] && [ -f "$PREFIX/dist/erlkoenig_nft.service" ]; then
+    # Remove any existing OTEL lines first
+    sed -i '/^Environment=OTEL_/d' "$PREFIX/dist/erlkoenig_nft.service"
+    # Add OTEL env vars directly in the service file (drop-ins don't
+    # work reliably with symlinked units)
+    sed -i "/ERL_EPMD_PORT/a Environment=OTEL_SERVICE_NAME=erlkoenig_nft\nEnvironment=OTEL_EXPORTER_OTLP_ENDPOINT=$OTEL_ENDPOINT\nEnvironment=OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf" \
+        "$PREFIX/dist/erlkoenig_nft.service"
+    ok "OTel export: $OTEL_ENDPOINT"
+fi
+
 # ── Disable cloud-init /etc/hosts management ────────────
 
 if [ -d /etc/cloud/cloud.cfg.d ]; then
@@ -530,6 +546,11 @@ echo ""
 echo "  Config:    $PREFIX/etc/firewall.term"
 echo "  CLI:       erlkoenig-nft --help"
 echo "  Bind IP:   $RESOLVED_IP"
+if [ -n "$OTEL_ENDPOINT" ]; then
+    echo "  OTel:      $OTEL_ENDPOINT"
+else
+    echo "  OTel:      disabled (enable with --otel-endpoint URL)"
+fi
 echo ""
 if [ "$RESOLVED_IP" != "127.0.0.1" ]; then
     echo "  NOTE: Distribution bound to $RESOLVED_IP (cluster-ready, port 9101)."

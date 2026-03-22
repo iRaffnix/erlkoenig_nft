@@ -17,9 +17,11 @@ Environment=ERL_EPMD_PORT=4369
 ## Start: env.sh in the release handles cookie loading automatically
 ExecStart=/opt/erlkoenig_nft/bin/erlkoenig_nft foreground
 
-## Graceful shutdown
+## Graceful shutdown — BEAM needs time to flush OTel batches, close
+## netlink sockets, and deregister from epmd. Too-short timeout causes
+## SIGKILL which leaves zombie epmd registrations blocking restarts.
 KillSignal=SIGTERM
-TimeoutStopSec=15
+TimeoutStopSec=30
 
 ## Restart policy
 Restart=on-failure

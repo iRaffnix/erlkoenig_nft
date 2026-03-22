@@ -308,8 +308,8 @@ tcp_reject(Port) ->
         nft_expr_ir:cmp(eq, ?REG1, <<?TCP>>),
         nft_expr_ir:tcp_dport(?REG1),
         nft_expr_ir:cmp(eq, ?REG1, <<Port:16/big>>),
-        %% type=2 (tcp reset), code ignored
-        nft_expr_ir:reject(2, 0)
+        %% type=1 = NFT_REJECT_TCP_RST, code ignored for TCP RST
+        nft_expr_ir:reject(1, 0)
     ].
 
 -doc "Accept UDP traffic on the given port.".

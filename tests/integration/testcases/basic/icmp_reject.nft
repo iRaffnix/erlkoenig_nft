@@ -5,6 +5,6 @@ table inet test {
         tcp dport 22 accept
         icmp type echo-request accept
         meta l4proto ipv6-icmp accept
-        tcp dport 23 reject
+        tcp dport 23 reject with tcp reset
     }
 }

@@ -684,6 +684,10 @@ build_rule(Table, Chain, {dnat, IP, Port}, _Config) ->
 build_rule(Table, Chain, {tcp_dnat, MatchPort, DstIp, DstPort}, _Config) ->
     {ok, Bin} = erlkoenig_nft_ip:normalize(DstIp),
     encode_rule(Table, Chain, nft_rules:tcp_dnat(MatchPort, Bin, DstPort));
+%% NAT: SNAT (rewrite source address)
+build_rule(Table, Chain, {snat, IP, Port}, _Config) ->
+    {ok, Bin} = erlkoenig_nft_ip:normalize(IP),
+    encode_rule(Table, Chain, nft_rules:snat_rule(Bin, Port));
 %% Notrack: skip conntrack for specific port/proto (used in raw chains)
 build_rule(Table, Chain, {notrack, Port, Proto}, _Config) ->
     encode_rule(Table, Chain, nft_rules:notrack_rule(Port, Proto));

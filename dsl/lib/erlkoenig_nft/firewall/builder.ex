@@ -214,6 +214,7 @@ defmodule ErlkoenigNft.Firewall.Builder do
 
   def dnat(ip, port), do: {:dnat, ip, port}
   def tcp_dnat(match_port, dst_ip, dst_port), do: {:tcp_dnat, match_port, dst_ip, dst_port}
+  def snat(ip, port), do: {:snat, ip, port}
 
   def vmap_dispatch(proto, vmap_name) when proto in [:tcp, :udp] and is_binary(vmap_name) do
     {:vmap_dispatch, proto, vmap_name}

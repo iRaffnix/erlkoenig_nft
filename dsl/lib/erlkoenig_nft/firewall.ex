@@ -289,6 +289,14 @@ defmodule ErlkoenigNft.Firewall do
     end
   end
 
+  @doc "SNAT: rewrite source address to ip:port (static source NAT)"
+  defmacro snat(ip, port) do
+    quote do
+      @fw_builder Builder.push_rule(@fw_builder,
+        Builder.snat(unquote(ip), unquote(port)))
+    end
+  end
+
   # --- Zone definitions ---
 
   defmacro zone(name, opts) do

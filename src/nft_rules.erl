@@ -72,6 +72,7 @@ wrap each rule separately:
     masq_rule/0,
     oifname_neq_masq/1,
     dnat_rule/2,
+    snat_rule/2,
     tcp_dnat/3,
     %% Per-source-IP rate limiting (meters)
     meter_limit/4,
@@ -590,6 +591,23 @@ dnat_rule(IP, Port) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
         nft_expr_ir:immediate_data(?REG1, IP),
         nft_expr_ir:immediate_data(?REG2, <<Port:16/big>>),
         nft_expr_ir:dnat(?REG1, ?REG2, Family)
+    ].
+
+-doc "SNAT: rewrite source address (and optionally port).".
+-spec snat_rule(binary(), 0..65535) -> rule().
+snat_rule(IP, 0) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
+    %% Port 0 = address-only SNAT (no port rewrite)
+    Family = ip_family(IP),
+    [
+        nft_expr_ir:immediate_data(?REG1, IP),
+        nft_expr_ir:snat_addr(?REG1, Family)
+    ];
+snat_rule(IP, Port) when byte_size(IP) =:= 4; byte_size(IP) =:= 16 ->
+    Family = ip_family(IP),
+    [
+        nft_expr_ir:immediate_data(?REG1, IP),
+        nft_expr_ir:immediate_data(?REG2, <<Port:16/big>>),
+        nft_expr_ir:snat(?REG1, ?REG2, Family)
     ].
 
 -doc "DNAT TCP traffic on MatchPort to DstIp:DstPort.".

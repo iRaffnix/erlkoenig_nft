@@ -92,7 +92,7 @@ Example:
     reject/0, reject/2,
     immediate_data/2,
     %% NAT / Masquerade / Redirect
-    snat/2, snat/3,
+    snat/2, snat/3, snat_addr/2,
     dnat/2, dnat/3,
     masq/0, masq/2,
     redir/1,
@@ -471,6 +471,15 @@ snat(AddrReg, ProtoReg, Family) ->
     }}.
 snat(AddrReg, ProtoReg) ->
     snat(AddrReg, ProtoReg, 2).
+
+-doc "Source NAT address-only (no port rewrite).".
+-spec snat_addr(non_neg_integer(), non_neg_integer()) -> expr().
+snat_addr(AddrReg, Family) ->
+    {nat, #{
+        type => snat,
+        family => Family,
+        reg_addr_min => AddrReg
+    }}.
 
 -doc "Destination NAT. Rewrite destination address/port.".
 -spec dnat(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> expr().

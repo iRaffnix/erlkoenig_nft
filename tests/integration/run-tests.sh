@@ -98,7 +98,7 @@ def sanitize(data):
     for o in data.get("nftables", []):
         if "metainfo" in o:
             o["metainfo"] = {"json_schema_version": 1}
-        for key in ("table","chain","rule","set","counter","quota","flowtable"):
+        for key in ("table","chain","rule","set","map","counter","quota","flowtable"):
             if key in o and "handle" in o[key]:
                 o[key]["handle"] = 0
     return data

@@ -1,0 +1,5 @@
+#{table => <<"test">>,
+  chains =>
+      [#{name => <<"prerouting">>,priority => -200,type => filter,
+         hook => prerouting,policy => accept,
+         rules => [fib_rpf_drop]}]}.

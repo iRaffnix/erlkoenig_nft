@@ -1,0 +1,9 @@
+#{table => <<"test">>,
+  chains =>
+      [#{name => <<"input">>,priority => 0,type => filter,hook => input,
+         policy => drop,
+         rules =>
+             [ct_established_accept,{vmap_dispatch,tcp,<<"port_vmap">>}]}],
+  vmaps =>
+      [#{name => <<"port_vmap">>,type => inet_service,
+         entries => [{80,accept},{443,accept}]}]}.

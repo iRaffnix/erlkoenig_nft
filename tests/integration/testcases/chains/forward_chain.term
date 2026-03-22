@@ -1,0 +1,5 @@
+#{table => <<"test">>,
+  chains =>
+      [#{name => <<"forward">>,priority => 0,type => filter,hook => forward,
+         policy => drop,
+         rules => [ct_established_accept]}]}.

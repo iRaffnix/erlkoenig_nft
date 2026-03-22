@@ -1,0 +1,9 @@
+#{counters => [<<"dropped">>],
+  table => <<"test">>,
+  chains =>
+      [#{name => <<"input">>,priority => 0,type => filter,hook => input,
+         policy => drop,
+         rules =>
+             [ct_established_accept,
+              {tcp_accept,22},
+              {log_drop_nflog,<<"NFLOG-DROP: ">>,1,<<"dropped">>}]}]}.

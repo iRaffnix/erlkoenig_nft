@@ -467,8 +467,10 @@ apply_config(Config) ->
          || {Idx, Vmap} <- with_index(Vmaps)
         ]),
 
-        %% Chains + Rules
-        [build_chain(Table, Chain, Config) || Chain <- Chains]
+        %% Chains: create ALL chains first, then ALL rules.
+        %% This ensures jump targets exist before any rule references them.
+        [build_chain_create(Table, Chain) || Chain <- Chains],
+        lists:flatten([build_chain_rules(Table, Chain, Config) || Chain <- Chains])
     ]),
 
     nfnl_server:apply_msgs(erlkoenig_nft_srv, Msgs).
@@ -505,47 +507,51 @@ start_counters(Config) ->
     end.
 
 %% --- Internal: Build chain messages ---
+%%
+%% Chain creation and rule insertion are separated so that ALL chains
+%% are created before ANY rules are inserted. This ensures that jump
+%% targets (regular chains) exist when rules reference them.
 
--spec build_chain(binary(), map(), map()) -> [fun()].
-build_chain(Table, ChainConfig, Config) ->
+-spec build_chain_create(binary(), map()) -> fun().
+build_chain_create(Table, ChainConfig) ->
+    Name = maps:get(name, ChainConfig),
+    case maps:is_key(hook, ChainConfig) of
+        true ->
+            Hook = maps:get(hook, ChainConfig),
+            Type = maps:get(type, ChainConfig, filter),
+            Priority = maps:get(priority, ChainConfig, 0),
+            Policy = maps:get(policy, ChainConfig, accept),
+            fun(S) ->
+                nft_chain:add(
+                    ?INET,
+                    #{
+                        table => Table,
+                        name => Name,
+                        hook => Hook,
+                        type => Type,
+                        priority => Priority,
+                        policy => Policy
+                    },
+                    S
+                )
+            end;
+        false ->
+            fun(S) ->
+                nft_chain:add_regular(
+                    ?INET,
+                    #{
+                        table => Table, name => Name
+                    },
+                    S
+                )
+            end
+    end.
+
+-spec build_chain_rules(binary(), map(), map()) -> [fun()].
+build_chain_rules(Table, ChainConfig, Config) ->
     Name = maps:get(name, ChainConfig),
     Rules = maps:get(rules, ChainConfig, []),
-
-    ChainMsg =
-        case maps:is_key(hook, ChainConfig) of
-            true ->
-                Hook = maps:get(hook, ChainConfig),
-                Type = maps:get(type, ChainConfig, filter),
-                Priority = maps:get(priority, ChainConfig, 0),
-                Policy = maps:get(policy, ChainConfig, accept),
-                fun(S) ->
-                    nft_chain:add(
-                        ?INET,
-                        #{
-                            table => Table,
-                            name => Name,
-                            hook => Hook,
-                            type => Type,
-                            priority => Priority,
-                            policy => Policy
-                        },
-                        S
-                    )
-                end;
-            false ->
-                fun(S) ->
-                    nft_chain:add_regular(
-                        ?INET,
-                        #{
-                            table => Table, name => Name
-                        },
-                        S
-                    )
-                end
-        end,
-
-    RuleMsgs = lists:flatten([build_rule(Table, Name, Rule, Config) || Rule <- Rules]),
-    [ChainMsg | RuleMsgs].
+    lists:flatten([build_rule(Table, Name, Rule, Config) || Rule <- Rules]).
 
 %% --- Internal: Build rule → semantic terms → msg_fun ---
 

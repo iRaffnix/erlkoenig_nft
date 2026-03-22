@@ -1,5 +1,5 @@
-#{table => <<"test">>,
-  counters => [<<"tcp_22">>],
+#{counters => [<<"tcp_22">>],
+  table => <<"test">>,
   chains =>
       [#{name => <<"input">>,priority => 0,type => filter,hook => input,
          policy => drop,

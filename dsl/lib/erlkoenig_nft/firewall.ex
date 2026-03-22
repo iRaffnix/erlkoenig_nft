@@ -167,7 +167,8 @@ defmodule ErlkoenigNft.Firewall do
 
   defmacro accept_tcp(port, opts) do
     quote do
-      @fw_builder Builder.push_rule(@fw_builder, Builder.tcp_accept(unquote(port), unquote(opts)))
+      @fw_builder Builder.push_rule_with_counter(@fw_builder,
+        Builder.tcp_accept(unquote(port), unquote(opts)))
     end
   end
 
@@ -177,7 +178,8 @@ defmodule ErlkoenigNft.Firewall do
 
   defmacro accept_udp(port, opts) do
     quote do
-      @fw_builder Builder.push_rule(@fw_builder, Builder.udp_accept(unquote(port), unquote(opts)))
+      @fw_builder Builder.push_rule_with_counter(@fw_builder,
+        Builder.udp_accept(unquote(port), unquote(opts)))
     end
   end
 

@@ -271,6 +271,20 @@ defmodule ErlkoenigNft.Firewall.Builder do
     update_in(state, [:rules_acc], &(&1 ++ [rule]))
   end
 
+  @doc "Push a rule and auto-register any counter it references."
+  def push_rule_with_counter(state, rule) do
+    state = push_rule(state, rule)
+    case extract_counter(rule) do
+      nil -> state
+      name ->
+        if name in state.counters, do: state, else: add_counters(state, [name])
+    end
+  end
+
+  defp extract_counter({_, _, counter, _}) when is_binary(counter), do: counter
+  defp extract_counter({_, _, counter}) when is_binary(counter), do: counter
+  defp extract_counter(_), do: nil
+
   def take_rules(state) do
     {state.rules_acc, %{state | rules_acc: []}}
   end

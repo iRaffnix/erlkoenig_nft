@@ -1,0 +1,20 @@
+#{table => <<"test_sets">>,
+  sets =>
+      [{<<"blocklist">>,ipv4_addr,
+        #{elements => [<<"198.51.100.1">>,<<"203.0.113.5">>]}},
+       {<<"allowlist">>,ipv4_addr,
+        #{elements => [<<"10.0.0.1">>,<<"10.0.0.2">>]}},
+       {<<"blocklist6">>,ipv6_addr}],
+  chains =>
+      [#{name => <<"prerouting_ban">>,priority => -300,type => filter,
+         hook => prerouting,policy => accept,
+         rules =>
+             [{set_lookup_drop,<<"blocklist">>},
+              {set_lookup_drop,<<"blocklist6">>}]},
+       #{name => <<"inbound">>,priority => 0,type => filter,hook => input,
+         policy => drop,
+         rules =>
+             [ct_established_accept,
+              {iifname_accept,<<"lo">>},
+              {tcp_accept,22},
+              icmp_accept]}]}.

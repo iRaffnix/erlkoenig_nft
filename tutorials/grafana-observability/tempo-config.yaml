@@ -1,6 +1,4 @@
 # Tempo configuration for erlkoenig_nft tutorial
-#
-# Receives traces via OTLP gRPC from the OTel Collector.
 
 server:
   http_listen_port: 3200
@@ -19,7 +17,3 @@ storage:
       path: /var/tempo/traces
     wal:
       path: /var/tempo/wal
-
-query_frontend:
-  search:
-    max_duration: 0

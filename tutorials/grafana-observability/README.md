@@ -1,376 +1,197 @@
 # Tutorial: Grafana Observability for erlkoenig_nft
 
-This is a hands-on, step-by-step guide to getting full observability
-for erlkoenig_nft — metrics, traces, and structured logs — visible in
-Grafana dashboards.
+End-to-end guide: erlkoenig_nft firewall metrics and traces in Grafana.
 
-By the end of this tutorial you will have:
+## What You Get
 
-- An OpenTelemetry Collector receiving telemetry from erlkoenig_nft
-- Prometheus storing firewall metrics (counter rates, conntrack, threat detection)
-- Tempo storing operation traces (ban, unban, reload)
-- Loki storing structured log events (bans, alerts, drops)
-- Grafana dashboards showing all of it
+- Live firewall counters (SSH packets/sec, dropped packets/sec) in Grafana
+- Traces for every ban, unban, and reload operation
+- Alerts when thresholds are exceeded
 
 ## Prerequisites
 
 - Docker and Docker Compose (v2)
-- Erlang/OTP 28+ installed
+- Erlang/OTP 28+
 - erlkoenig_nft source checked out
-- `make` available
-- About 1 GB of free RAM for the containers
 
-## Overview
+## Step 1: Write the Firewall Config
 
-```
-┌─────────────────────┐
-│   erlkoenig_nft     │
-│                     │
-│  erlkoenig_nft_otel │──── OTLP/HTTP ────┐
-│  (metrics, traces,  │     :4318         │
-│   logs)             │                    ▼
-└─────────────────────┘          ┌─────────────────┐
-                                 │  OTel Collector  │
-                                 │                  │
-                                 │  metrics ──→ Prometheus :9090
-                                 │  traces  ──→ Tempo      :3200
-                                 │  logs    ──→ Loki       :3100
-                                 └─────────────────┘
-                                          │
-                                          ▼
-                                 ┌─────────────────┐
-                                 │     Grafana      │
-                                 │     :3000        │
-                                 └─────────────────┘
+The tutorial ships a ready-made config in `firewall.exs`. Here's what it does:
+
+```elixir
+defmodule Firewall.OtelTest do
+  use ErlkoenigNft.Firewall
+
+  firewall "erlkoenig" do
+    counters [:ssh, :icmp, :dropped]
+
+    chain "input", hook: :input, priority: 0, policy: :drop do
+      accept :established          # allow replies to outgoing connections
+      accept :loopback             # CRITICAL: OTLP exports to localhost:4318
+      accept :icmp                 # allow ping
+      accept_protocol :icmpv6      # allow IPv6 ping
+      accept_tcp 22, counter: :ssh # allow SSH, count packets
+      log_and_drop "DROP: ", counter: :dropped  # drop + count everything else
+    end
+  end
+end
 ```
 
-## Step 1: Set Up the Observability Stack
+**Why `accept :loopback` matters:** erlkoenig_nft exports telemetry to the
+OTel Collector on `localhost:4318`. Without the loopback rule, the firewall
+blocks its own export traffic. This is the most common mistake.
 
-All configuration files are provided in this tutorial directory.
+The watch section defines which counters to monitor and at what thresholds:
 
-Start the full stack:
+```elixir
+defmodule Watch.OtelTest do
+  use ErlkoenigNft.Watch
+
+  watch :otel_test do
+    counter :ssh, :pps, threshold: 100      # alert if SSH > 100 pps
+    counter :icmp, :pps, threshold: 50      # alert if ICMP > 50 pps
+    counter :dropped, :pps, threshold: 200  # alert if drops > 200 pps
+    interval 2000                           # poll every 2 seconds
+    on_alert :log
+  end
+end
+```
+
+These counters become the metrics you see in Grafana. Every 2 seconds,
+erlkoenig_nft reads the kernel counters, computes packets/sec and bytes/sec,
+and pushes them via OTLP.
+
+## Step 2: Start the Observability Stack
 
 ```bash
 cd tutorials/grafana-observability
 docker compose up -d
 ```
 
-Verify everything is running:
+This starts:
+
+| Container | Port | Role |
+|---|---|---|
+| OTel Collector | 4318 | Receives OTLP from erlkoenig_nft |
+| Prometheus | 9090 | Stores metrics |
+| Tempo | 3200 | Stores traces |
+| Loki | 3100 | Stores logs |
+| Grafana | 3000 | Dashboards |
+
+Verify the collector is ready:
 
 ```bash
-docker compose ps
+curl -s -X POST http://localhost:4318/v1/traces \
+  -H "Content-Type: application/json" -d '{}'
 ```
 
-You should see five healthy containers: `otel-collector`, `prometheus`,
-`tempo`, `loki`, and `grafana`.
+Any response (even an error body) means it's listening.
 
-Check that the collector is accepting OTLP:
+## Step 3: Build and Install
 
-```bash
-curl -s http://localhost:4318/v1/metrics -X POST \
-  -H "Content-Type: application/json" -d '{}' | head -1
-```
-
-A non-connection-error response (even an error body) means the
-collector is listening.
-
-## Step 2: Build erlkoenig_nft with OTel
-
-From the erlkoenig_nft root directory, build the production release:
+Build the production release:
 
 ```bash
 cd /path/to/erlkoenig_nft
-rebar3 as prod release
+rebar3 as prod tar
 ```
 
-This pulls in `opentelemetry`, `opentelemetry_exporter`, and their
-dependencies — they are only included in the `prod` profile.
-
-Verify the release includes the OTel applications:
+Install with OTel export enabled:
 
 ```bash
-ls _build/prod/rel/erlkoenig_nft/lib/ | grep opentelemetry
+sudo sh install.sh --local _build/prod/rel/erlkoenig_nft \
+  --otel-endpoint http://localhost:4318
 ```
 
-You should see `opentelemetry-1.x.x`, `opentelemetry_api-1.x.x`, and
-`opentelemetry_exporter-1.x.x`.
+The `--otel-endpoint` flag configures the OTLP export target directly
+in the systemd service.
 
-## Step 3: Configure and Start erlkoenig_nft
+## Step 4: Deploy the Firewall Config
 
-Set the environment variables for the OTLP exporter:
+Compile the DSL config and apply it:
 
 ```bash
-export OTEL_SERVICE_NAME=erlkoenig_nft
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+sudo erlkoenig-nft compile tutorials/grafana-observability/firewall.exs \
+  -o /opt/erlkoenig_nft/etc/firewall.term
+sudo systemctl restart erlkoenig_nft
 ```
 
-Start the release (needs root/CAP_NET_ADMIN for firewall operations):
+Verify the rules are applied:
 
 ```bash
-sudo -E _build/prod/rel/erlkoenig_nft/bin/erlkoenig_nft foreground
+sudo nft list ruleset
 ```
 
-You should see in the logs:
+You should see:
 
 ```
-=INFO REPORT==== OTel instrumentation active
-=INFO REPORT==== Firewall applied: table=webserver, chains=2, counters=5
+table inet erlkoenig {
+    counter ssh { packets 0 bytes 0 }
+    counter icmp { packets 0 bytes 0 }
+    counter dropped { packets 0 bytes 0 }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+        ct state established,related accept
+        iifname "lo" accept
+        icmp type echo-request accept
+        meta l4proto ipv6-icmp accept
+        tcp dport 22 counter name "ssh" accept
+        log prefix "DROP: " counter name "dropped" drop
+    }
+}
 ```
 
-The `-E` flag preserves the `OTEL_*` environment variables through sudo.
+## Step 5: Generate Traces
 
-## Step 4: Generate Some Telemetry
-
-Open a second terminal and attach to the running node:
+Counter metrics flow automatically as traffic hits the firewall. But
+traces only appear for mutating operations. Trigger some:
 
 ```bash
-sudo _build/prod/rel/erlkoenig_nft/bin/erlkoenig_nft remote_console
+# Reload the config (creates a nft.reload span)
+echo '{"cmd":"reload"}' | sudo nc -U -q1 /run/erlkoenig_nft/api.sock
 ```
 
-Now generate events from the Erlang shell:
+Wait 10 seconds for the OTel batch exporter to flush, then check Grafana.
 
-```erlang
-%% Ban an IP — creates a span + log event + updates guard metrics
-erlkoenig_nft:ban("203.0.113.42").
+## Step 6: Open Grafana
 
-%% Check guard stats
-erlkoenig_nft:guard_stats().
+Open http://localhost:3000 (no login needed).
 
-%% Unban it
-erlkoenig_nft:unban("203.0.113.42").
+The tutorial auto-provisions all data sources and a dashboard.
+Go to **Dashboards** -> **erlkoenig** -> **erlkoenig_nft Firewall**.
 
-%% Reload config — creates a span
-erlkoenig_nft:reload().
+You should see:
 
-%% Add an element to a set — creates a span
-erlkoenig_nft:add_element(<<"blocklist">>, "198.51.100.1").
+- **Packets per Second** — one line per counter (ssh, dropped)
+- **Active Connections** — conntrack gauge
+- **Threat Detection** — floods, scans, active bans
 
-%% Remove it
-erlkoenig_nft:del_element(<<"blocklist">>, "198.51.100.1").
-
-%% Check counter rates (these are reported as metrics automatically)
-erlkoenig_nft:rates().
-
-%% Check active connections
-erlkoenig_nft:ct_count().
-```
-
-Each of these operations emits OTel signals. The counter metrics are
-exported continuously as traffic flows.
-
-Alternatively, use the JSON API socket:
-
-```bash
-echo '{"cmd":"ban","ip":"203.0.113.42"}' | \
-  sudo socat - UNIX-CONNECT:/run/erlkoenig_nft/api.sock
-
-echo '{"cmd":"unban","ip":"203.0.113.42"}' | \
-  sudo socat - UNIX-CONNECT:/run/erlkoenig_nft/api.sock
-```
-
-## Step 5: Verify Data in Prometheus
-
-Open Prometheus at http://localhost:9090 and run these queries:
-
-```promql
-# All exported metrics from erlkoenig_nft
-{job="otel-collector"}
-
-# Counter packets per second
-erlkoenig_nft_counter_pps
-
-# Active connections
-erlkoenig_nft_ct_active
-
-# Bans issued
-erlkoenig_nft_guard_bans_issued
-```
-
-If you see results, the full pipeline is working:
-erlkoenig_nft -> OTel Collector -> Prometheus.
-
-## Step 6: Set Up Grafana Dashboards
-
-Open Grafana at http://localhost:3000 (no login required — anonymous
-admin is enabled in the tutorial compose file).
-
-The data sources are auto-provisioned. Go to **Explore** and select:
-
-- **Prometheus** for metrics
-- **Tempo** for traces
-- **Loki** for logs
-
-### Import the Tutorial Dashboard
-
-1. Go to **Dashboards** -> **Import**
-2. Upload or paste the contents of `dashboard.json` from this directory
-3. Select the Prometheus data source when prompted
-4. Click **Import**
-
-The dashboard includes:
-
-- **Firewall Traffic** — packets/sec and bytes/sec per named counter
-- **Connection Tracking** — active connections over time
-- **Threat Detection** — floods detected, scans detected, active bans
-- **NFLOG Drops** — dropped packets over time
-- **Operations** — ban/unban/reload activity
-
-### Build Your Own Panels
-
-Here are useful queries for building custom panels:
-
-**Traffic overview — stacked area chart:**
-
-```promql
-sum by (name) (erlkoenig_nft_counter_pps)
-```
-
-**Connection pressure — single stat:**
-
-```promql
-erlkoenig_nft_ct_active
-```
-
-**Ban rate — bar chart (per 5min):**
-
-```promql
-increase(erlkoenig_nft_guard_bans_issued[5m])
-```
-
-**Threat detection timeline — stacked bars:**
-
-```promql
-increase(erlkoenig_nft_guard_floods[5m])
-increase(erlkoenig_nft_guard_scans[5m])
-```
-
-**Top SSH rate — gauge:**
-
-```promql
-erlkoenig_nft_counter_pps{name="ssh"}
-```
-
-## Step 7: Explore Traces
-
-In Grafana, go to **Explore** -> select **Tempo**.
-
-Search for traces by service name `erlkoenig_nft`. You should see
-spans for each `ban`, `unban`, `reload`, `add_element`, and
-`del_element` operation you triggered in Step 4.
-
-Click a trace to see:
-
-- **Duration** of the operation (how long the netlink transaction took)
-- **Attributes**: `ip`, `set`, `value`, `result`
-- **Error details** if the operation failed
-
-Traces are especially useful for debugging slow bans (netlink socket
-contention) or failed reloads (config parse errors).
-
-## Step 8: Explore Logs
-
-In Grafana, go to **Explore** -> select **Loki**.
-
-Query structured log events:
-
-```logql
-{service_name="erlkoenig_nft"}
-```
-
-Filter by event type:
-
-```logql
-{service_name="erlkoenig_nft"} |= "nft.ban"
-```
-
-Filter for threat alerts only:
-
-```logql
-{service_name="erlkoenig_nft"} |= "guard"
-```
-
-Each log entry includes the OTel trace ID, so you can click through
-from a log event to the corresponding trace in Tempo.
-
-## Step 9: Set Up Alerts
-
-In Grafana, go to **Alerting** -> **Alert Rules** -> **New Rule**.
-
-### Example: High Ban Rate
-
-- **Query**: `increase(erlkoenig_nft_guard_bans_issued[5m]) > 10`
-- **Condition**: "Is above 10"
-- **Evaluate every**: 1m
-- **For**: 2m
-- **Label**: severity = warning
-- **Summary**: "erlkoenig_nft issued {{ $value }} bans in 5 minutes"
-
-### Example: Flood Detected
-
-- **Query**: `increase(erlkoenig_nft_guard_floods[5m]) > 0`
-- **Condition**: "Is above 0"
-- **Evaluate every**: 30s
-- **For**: 0m (fire immediately)
-- **Label**: severity = critical
-- **Summary**: "Connection flood detected"
-
-### Example: High Connection Count
-
-- **Query**: `erlkoenig_nft_ct_active > 50000`
-- **Condition**: "Is above 50000"
-- **Evaluate every**: 1m
-- **For**: 5m
-- **Label**: severity = warning
-- **Summary**: "Active connections at {{ $value }}, approaching mode switch threshold"
+To explore traces: **Explore** -> **Tempo** -> search for
+`service.name = erlkoenig_nft`. Click a span to see duration,
+attributes (`ip`, `result`), and error details.
 
 ## Cleanup
 
-Stop the observability stack:
-
 ```bash
-cd tutorials/grafana-observability
 docker compose down -v
 ```
 
-The `-v` flag removes the data volumes. Omit it to keep historical data.
-
 ## Troubleshooting
 
-### No metrics in Prometheus
+**No data in Grafana?**
 
-1. Check the collector logs: `docker compose logs otel-collector`
-2. Verify erlkoenig_nft OTel is active: look for "OTel instrumentation active" in logs
-3. Verify the endpoint: `echo $OTEL_EXPORTER_OTLP_ENDPOINT` should be `http://localhost:4318`
-4. Check Prometheus targets: http://localhost:9090/targets — the `otel-collector` job should be UP
+1. Check `sudo nft list ruleset` — the `iifname "lo" accept` rule must
+   be present, otherwise OTLP traffic to localhost:4318 is dropped.
+2. Check `sudo systemctl status erlkoenig_nft` — service must be active.
+3. Traces need a mutating operation (reload, ban, unban). Counter metrics
+   need traffic hitting the firewall.
 
-### No traces in Tempo
+**Service won't start?**
 
-1. Traces require mutating operations (ban, unban, reload). Read-only queries like `rates()` don't create spans.
-2. Check Tempo is receiving: `docker compose logs tempo`
-3. In Grafana Explore, make sure you're searching by `service.name = erlkoenig_nft`
+1. `pgrep beam` — if an old BEAM is running, kill it first.
+2. Check `journalctl -u erlkoenig_nft -n 20` for errors.
 
-### OTel instrumentation not active
+**No traces after ban/reload?**
 
-If you don't see the "OTel instrumentation active" log:
-
-1. Make sure you built with `rebar3 as prod release` (not `rebar3 release`)
-2. Check the release includes OTel: `ls _build/prod/rel/erlkoenig_nft/lib/ | grep otel`
-3. The `opentelemetry` application must be started before `erlkoenig_nft` — the relx config handles this
-
-### erlkoenig_nft_otel returns ignore
-
-This is normal when:
-- Running a dev build (`rebar3 release` without `as prod`)
-- Running tests (`make test`)
-- Using erlkoenig_nft as a library dependency
-
-The module checks `code:ensure_loaded(opentelemetry)` on init. If the
-SDK is not in the code path, it returns `ignore` — no process, no overhead.
-
-## Next Steps
-
-- Add the other erlkoenig applications (erlkoenig, erlkoenig_fuse, erlkoenig_elf) to the same collector for unified observability
-- Set up Grafana notification channels (Slack, PagerDuty, email) for the alert rules
-- Deploy the OTel Collector as a sidecar or DaemonSet in production
-- Explore the Grafana Tempo service graph for cross-service correlation when running the full erlkoenig cluster
+The batch exporter flushes every ~5-10 seconds. Wait and refresh.

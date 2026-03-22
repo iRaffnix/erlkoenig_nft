@@ -30,7 +30,7 @@ jobs:
             erlang-
 
       - name: CI gate
-        run: make check
+        run: make lint test
 
   kernel:
     name: Kernel Tests (root)

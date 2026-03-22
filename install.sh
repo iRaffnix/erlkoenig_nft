@@ -356,19 +356,65 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
     ok "Service user '$SERVICE_USER' created"
 fi
 
+# ── Install cookie-aware wrapper ─────────────────────────
+# The relx release script requires RELX_COOKIE to be set externally.
+# Our wrapper reads the cookie from $PREFIX/cookie automatically,
+# making bin/erlkoenig_nft self-consistent for all commands
+# (foreground, daemon, eval, rpc, stop, remote_console, pid).
+
+if [ -f "$PREFIX/bin/erlkoenig_nft" ] && [ ! -f "$PREFIX/bin/_release" ]; then
+    mv "$PREFIX/bin/erlkoenig_nft" "$PREFIX/bin/_release"
+    cat > "$PREFIX/bin/erlkoenig_nft" << 'WRAPPER'
+#!/bin/sh
+set -e
+SCRIPT=$(readlink -f "$0" 2>/dev/null || echo "$0")
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT")" && pwd -P)"
+RELEASE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+if [ -z "$RELX_COOKIE" ]; then
+    COOKIE_FILE="$RELEASE_ROOT/cookie"
+    if [ -f "$COOKIE_FILE" ] && [ -r "$COOKIE_FILE" ]; then
+        RELX_COOKIE="$(cat "$COOKIE_FILE")"
+        export RELX_COOKIE
+    else
+        echo "FATAL: No Erlang cookie found." >&2
+        echo "  Expected: $RELEASE_ROOT/cookie" >&2
+        echo "  Generate: head -c 32 /dev/urandom | base64 | tr -d '/+=\\n' | head -c 32 > $RELEASE_ROOT/cookie" >&2
+        exit 1
+    fi
+fi
+exec "$RELEASE_ROOT/bin/_release" "$@"
+WRAPPER
+    ok "Cookie-aware wrapper installed"
+fi
+
 # ── File permissions ─────────────────────────────────────
 
 chown -R root:"$SERVICE_USER" "$PREFIX"
 chmod 750 "$PREFIX"
 [ -f "$PREFIX/bin/erlkoenig_nft" ] && chmod 755 "$PREFIX/bin/erlkoenig_nft"
+[ -f "$PREFIX/bin/_release" ] && chmod 755 "$PREFIX/bin/_release"
 [ -f "$PREFIX/bin/erlkoenig" ] && chmod 755 "$PREFIX/bin/erlkoenig"
 [ -f "$PREFIX/dist/erlkoenig_nft.service" ] && chmod 644 "$PREFIX/dist/erlkoenig_nft.service"
 
-# releases dir must be writable — relx generates vm.args from vm.args.src
+# releases dir: service user needs to write vm.args (relx generates it from vm.args.src at every start).
+# Security invariants:
+#   - vm.args.src (template):    root-owned, read-only for service user (not writable)
+#   - vm.args (generated):       service-user-owned (relx rewrites it at every start)
+#   - releases/<vsn>/ directory: service-user-writable (vm.args creation target)
+#   - All other release files:   root-owned, read-only
 REL_VSN_DIR=$(ls -d "$PREFIX"/releases/*/start.boot 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
 if [ -n "$REL_VSN_DIR" ]; then
     chown "$SERVICE_USER":"$SERVICE_USER" "$REL_VSN_DIR"
     chmod 750 "$REL_VSN_DIR"
+    # vm.args.src: root-owned, readable by service user, NOT writable
+    [ -f "$REL_VSN_DIR/vm.args.src" ] && chown root:"$SERVICE_USER" "$REL_VSN_DIR/vm.args.src" && chmod 440 "$REL_VSN_DIR/vm.args.src"
+    # vm.args: service-user-owned (relx overwrites at every start)
+    # On first install it doesn't exist yet — touch it so permissions are set before first start
+    touch "$REL_VSN_DIR/vm.args"
+    chown "$SERVICE_USER":"$SERVICE_USER" "$REL_VSN_DIR/vm.args"
+    chmod 640 "$REL_VSN_DIR/vm.args"
+    # sys.config: root-owned, read-only (install.sh patches for cluster mode)
+    [ -f "$REL_VSN_DIR/sys.config" ] && chown root:"$SERVICE_USER" "$REL_VSN_DIR/sys.config" && chmod 440 "$REL_VSN_DIR/sys.config"
 fi
 
 # etc dir for firewall config
@@ -479,7 +525,7 @@ echo "  Status:    sudo systemctl status erlkoenig_nft"
 echo "  Stop:      sudo systemctl stop erlkoenig_nft"
 echo "  Enable:    sudo systemctl enable erlkoenig_nft"
 echo "  Verify:    sudo nft list ruleset"
-echo "  Shell:     sudo RELX_COOKIE=\$(sudo cat $PREFIX/cookie) $PREFIX/bin/erlkoenig_nft remote_console"
+echo "  Shell:     sudo $PREFIX/bin/erlkoenig_nft remote_console"
 echo ""
 echo "  Config:    $PREFIX/etc/firewall.term"
 echo "  CLI:       erlkoenig-nft --help"

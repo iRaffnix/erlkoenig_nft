@@ -65,14 +65,24 @@ install: release
 	@# Ownership: root owns files, service user can read
 	chown -R root:$(SERVICE_USER) $(PREFIX)
 	chmod 750 $(PREFIX)
+	@# Install cookie-aware wrapper (rename relx script to _release)
+	mv $(PREFIX)/bin/erlkoenig_nft $(PREFIX)/bin/_release
+	cp bin/erlkoenig_nft_wrapper.sh $(PREFIX)/bin/erlkoenig_nft
 	chmod 755 $(PREFIX)/bin/erlkoenig_nft
+	chmod 755 $(PREFIX)/bin/_release
 	@[ -f $(PREFIX)/bin/erlkoenig ] && chmod 755 $(PREFIX)/bin/erlkoenig || true
 	chmod 644 $(PREFIX)/dist/erlkoenig_nft.service
-	@# releases/<vsn> must be writable — relx generates vm.args from vm.args.src at start
+	@# Security: strict file ownership in releases/<vsn>/
+	@# vm.args.src = root-owned template (read-only for service user)
+	@# vm.args     = service-user-owned (relx rewrites at every start)
+	@# directory   = service-user-writable (vm.args creation target)
 	@REL_VSN_DIR=$$(ls -d $(PREFIX)/releases/*/start.boot 2>/dev/null | head -1 | xargs dirname 2>/dev/null); \
 	if [ -n "$$REL_VSN_DIR" ]; then \
 		chown $(SERVICE_USER):$(SERVICE_USER) "$$REL_VSN_DIR"; \
 		chmod 750 "$$REL_VSN_DIR"; \
+		[ -f "$$REL_VSN_DIR/vm.args.src" ] && chown root:$(SERVICE_USER) "$$REL_VSN_DIR/vm.args.src" && chmod 440 "$$REL_VSN_DIR/vm.args.src"; \
+		touch "$$REL_VSN_DIR/vm.args" && chown $(SERVICE_USER):$(SERVICE_USER) "$$REL_VSN_DIR/vm.args" && chmod 640 "$$REL_VSN_DIR/vm.args"; \
+		[ -f "$$REL_VSN_DIR/sys.config" ] && chown root:$(SERVICE_USER) "$$REL_VSN_DIR/sys.config" && chmod 440 "$$REL_VSN_DIR/sys.config"; \
 	fi
 	@# Config directory (firewall.term search path)
 	mkdir -p $(PREFIX)/etc
@@ -111,8 +121,9 @@ install: release
 	@echo ""
 	@echo "Done. Next steps:"
 	@echo "  1. Verify hostname:  getent hosts $$(hostname -s)"
-	@echo "  2. Test foreground:  sudo -u $(SERVICE_USER) RELX_COOKIE=\$$(cat $(PREFIX)/cookie) $(PREFIX)/bin/erlkoenig_nft foreground"
+	@echo "  2. Test foreground:  $(PREFIX)/bin/erlkoenig_nft foreground"
 	@echo "  3. Start service:    sudo systemctl start erlkoenig_nft"
+	@echo "  4. Check status:     $(PREFIX)/bin/erlkoenig_nft eval 'erlkoenig_nft:status()'"
 
 uninstall:
 	@echo "Uninstalling erlkoenig_nft ..."

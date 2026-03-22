@@ -77,36 +77,44 @@ Accepts IPv4 or IPv6 as tuple, binary, or string:
 """.
 -spec ban(inet:ip_address() | binary() | string()) -> ok | {error, term()}.
 ban(IP) ->
-    case erlkoenig_nft_firewall:ban(IP) of
-        ok ->
-            erlkoenig_nft_audit:log(ban, #{ip => iolist_to_binary(io_lib:format("~s", [IP]))}),
-            %% Also kill existing connections from this IP
-            _ =
-                case erlkoenig_nft_ip:normalize(IP) of
-                    {ok, Bin} ->
-                        try
-                            erlkoenig_nft_ct:kill_by_src(Bin)
-                        catch
-                            exit:{noproc, _} -> ok
-                        end;
-                    _ ->
-                        ok
-                end,
-            ok;
-        {error, _} = Err ->
-            Err
-    end.
+    IPBin = iolist_to_binary(io_lib:format("~s", [IP])),
+    erlkoenig_nft_otel:span(<<"nft.ban">>, #{<<"ip">> => IPBin}, fun() ->
+        case erlkoenig_nft_firewall:ban(IP) of
+            ok ->
+                erlkoenig_nft_audit:log(ban, #{ip => IPBin}),
+                erlkoenig_nft_otel:log_event(<<"nft.ban">>, warning, #{<<"ip">> => IPBin}),
+                %% Also kill existing connections from this IP
+                _ =
+                    case erlkoenig_nft_ip:normalize(IP) of
+                        {ok, Bin} ->
+                            try
+                                erlkoenig_nft_ct:kill_by_src(Bin)
+                            catch
+                                exit:{noproc, _} -> ok
+                            end;
+                        _ ->
+                            ok
+                    end,
+                ok;
+            {error, _} = Err ->
+                Err
+        end
+    end).
 
 -doc "Remove an IP address from the blocklist (IPv4 or IPv6).".
 -spec unban(inet:ip_address() | binary() | string()) -> ok | {error, term()}.
 unban(IP) ->
-    case erlkoenig_nft_firewall:unban(IP) of
-        ok ->
-            erlkoenig_nft_audit:log(unban, #{ip => iolist_to_binary(io_lib:format("~s", [IP]))}),
-            ok;
-        {error, _} = Err ->
-            Err
-    end.
+    IPBin = iolist_to_binary(io_lib:format("~s", [IP])),
+    erlkoenig_nft_otel:span(<<"nft.unban">>, #{<<"ip">> => IPBin}, fun() ->
+        case erlkoenig_nft_firewall:unban(IP) of
+            ok ->
+                erlkoenig_nft_audit:log(unban, #{ip => IPBin}),
+                erlkoenig_nft_otel:log_event(<<"nft.unban">>, info, #{<<"ip">> => IPBin}),
+                ok;
+            {error, _} = Err ->
+                Err
+        end
+    end).
 
 -doc "Get current rates for all watched counters.".
 -spec rates() -> #{binary() => map()}.
@@ -126,13 +134,16 @@ Existing connections are preserved.
 """.
 -spec reload() -> ok | {error, term()}.
 reload() ->
-    case erlkoenig_nft_firewall:reload() of
-        ok ->
-            erlkoenig_nft_audit:log(reload, #{}),
-            ok;
-        {error, _} = Err ->
-            Err
-    end.
+    erlkoenig_nft_otel:span(<<"nft.reload">>, #{}, fun() ->
+        case erlkoenig_nft_firewall:reload() of
+            ok ->
+                erlkoenig_nft_audit:log(reload, #{}),
+                erlkoenig_nft_otel:log_event(<<"nft.reload">>, info, #{}),
+                ok;
+            {error, _} = Err ->
+                Err
+        end
+    end).
 
 %% --- Listing API ---
 
@@ -161,30 +172,36 @@ list_counters() ->
 -doc "Add an element to a named set.".
 -spec add_element(binary() | [byte()], binary() | string()) -> ok | {error, term()}.
 add_element(SetName, Value) ->
-    case erlkoenig_nft_firewall:add_element(SetName, Value) of
-        ok ->
-            erlkoenig_nft_audit:log(add_element, #{
-                set => iolist_to_binary([SetName]),
-                value => iolist_to_binary(io_lib:format("~s", [Value]))
-            }),
-            ok;
-        {error, _} = Err ->
-            Err
-    end.
+    SetBin = iolist_to_binary([SetName]),
+    ValBin = iolist_to_binary(io_lib:format("~s", [Value])),
+    erlkoenig_nft_otel:span(
+        <<"nft.add_element">>, #{<<"set">> => SetBin, <<"value">> => ValBin}, fun() ->
+            case erlkoenig_nft_firewall:add_element(SetName, Value) of
+                ok ->
+                    erlkoenig_nft_audit:log(add_element, #{set => SetBin, value => ValBin}),
+                    ok;
+                {error, _} = Err ->
+                    Err
+            end
+        end
+    ).
 
 -doc "Delete an element from a named set.".
 -spec del_element(binary() | [byte()], binary() | string()) -> ok | {error, term()}.
 del_element(SetName, Value) ->
-    case erlkoenig_nft_firewall:del_element(SetName, Value) of
-        ok ->
-            erlkoenig_nft_audit:log(del_element, #{
-                set => iolist_to_binary([SetName]),
-                value => iolist_to_binary(io_lib:format("~s", [Value]))
-            }),
-            ok;
-        {error, _} = Err ->
-            Err
-    end.
+    SetBin = iolist_to_binary([SetName]),
+    ValBin = iolist_to_binary(io_lib:format("~s", [Value])),
+    erlkoenig_nft_otel:span(
+        <<"nft.del_element">>, #{<<"set">> => SetBin, <<"value">> => ValBin}, fun() ->
+            case erlkoenig_nft_firewall:del_element(SetName, Value) of
+                ok ->
+                    erlkoenig_nft_audit:log(del_element, #{set => SetBin, value => ValBin}),
+                    ok;
+                {error, _} = Err ->
+                    Err
+            end
+        end
+    ).
 
 %% --- Diff API ---
 

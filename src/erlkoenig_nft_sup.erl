@@ -28,6 +28,8 @@ Uses rest_for_one strategy. Children are ordered by dependency:
     6. erlkoenig_nft_watch_sup      — Dynamic supervisor for counters
     7. erlkoenig_nft_audit          — Audit log for operations
     8. erlkoenig_nft_firewall       — Config owner, lifecycle manager
+    9. erlkoenig_nft_api            — JSON API over Unix socket
+   10. erlkoenig_nft_otel           — OpenTelemetry instrumentation (optional)
 
 If erlkoenig_nft_srv crashes, everything after it restarts. The firewall
 gets re-applied automatically on restart.
@@ -131,6 +133,15 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlkoenig_nft_api]
+        },
+        %% 9. OpenTelemetry instrumentation — metrics, traces, logs via OTLP
+        #{
+            id => erlkoenig_nft_otel,
+            start => {erlkoenig_nft_otel, start_link, []},
+            restart => transient,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlkoenig_nft_otel]
         }
     ],
     {ok, {SupFlags, Children}}.

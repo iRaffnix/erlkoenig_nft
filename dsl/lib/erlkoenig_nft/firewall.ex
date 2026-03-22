@@ -279,6 +279,16 @@ defmodule ErlkoenigNft.Firewall do
     quote do: @fw_builder Builder.push_rule(@fw_builder, Builder.forward_established())
   end
 
+  # --- NAT: DNAT ---
+
+  @doc "DNAT: redirect incoming TCP traffic on match_port to dst_ip:dst_port"
+  defmacro dnat(match_port, dst_ip, dst_port) do
+    quote do
+      @fw_builder Builder.push_rule(@fw_builder,
+        Builder.tcp_dnat(unquote(match_port), unquote(dst_ip), unquote(dst_port)))
+    end
+  end
+
   # --- Zone definitions ---
 
   defmacro zone(name, opts) do

@@ -1,0 +1,5 @@
+#{table => <<"test">>,
+  chains =>
+      [#{name => <<"prerouting">>,priority => -100,type => nat,
+         hook => prerouting,policy => accept,
+         rules => [{tcp_dnat,8080,<<"10.0.0.5">>,80}]}]}.

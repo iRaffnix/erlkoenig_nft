@@ -640,6 +640,9 @@ build_rule(Table, Chain, forward_established, _Config) ->
 %% NAT: masquerade outgoing traffic
 build_rule(Table, Chain, masq, _Config) ->
     encode_rule(Table, Chain, nft_rules:masq_rule());
+%% Unconditional jump to regular chain
+build_rule(Table, Chain, {jump, Target}, _Config) ->
+    encode_rule(Table, Chain, [nft_expr_ir:jump(ensure_binary(Target))]);
 %% Jump to chain on input interface
 build_rule(Table, Chain, {iifname_jump, Name, Target}, _Config) ->
     encode_rule(

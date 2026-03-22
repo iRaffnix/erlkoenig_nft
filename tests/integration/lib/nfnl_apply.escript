@@ -21,6 +21,7 @@ main([RootDir, TermFile]) ->
     %% Copy config to where the application expects it
     ConfDir = "etc",
     filelib:ensure_dir(ConfDir ++ "/"),
+    file:delete(ConfDir ++ "/firewall.term"),
     {ok, _} = file:copy(TermFile, ConfDir ++ "/firewall.term"),
 
     %% Start the full OTP application (crypto -> compiler -> erlkoenig_nft)
